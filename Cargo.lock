@@ -1645,6 +1645,7 @@ dependencies = [
  "handover-config",
  "handover-core",
  "libc",
+ "log",
  "uuid",
 ]
 

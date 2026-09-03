@@ -11,3 +11,4 @@ handover-config = { path = "../config" }
 uuid.workspace = true
 dirs.workspace = true
 libc = "0.2"
+log.workspace = true

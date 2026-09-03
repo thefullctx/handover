@@ -24,6 +24,14 @@ impl AgentRegistry {
             if !config.enabled {
                 continue;
             }
+            // An invalid config (e.g. a hand-edited resume_command missing
+            // {SESSION}) must not crash the daemon: skip the agent and warn.
+            // It stays in config.agents (visible in Settings to fix) but is
+            // absent from the registry, so it cannot be targeted until fixed.
+            if let Err(e) = config.validate() {
+                log::warn!("skipping invalid agent `{}`: {e}", config.id);
+                continue;
+            }
             match config.kind {
                 AgentKind::Command => {
                     agents.push(Arc::new(GenericCommandAgent::new(config.clone())))
@@ -129,5 +137,52 @@ impl Agent for UnsupportedAgent {
             agent: self.config.name.clone(),
             detail: self.reason.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(id: &str) -> AgentConfig {
+        AgentConfig {
+            id: id.into(),
+            name: format!("Agent {id}"),
+            kind: AgentKind::Command,
+            command: "true".into(),
+            description: None,
+            working_dir: None,
+            env: std::collections::HashMap::new(),
+            timeout_secs: None,
+            enabled: true,
+            demo: false,
+            default_action: None,
+            session_glob: None,
+            session_cli_list: None,
+            resume_command: None,
+            permission_marker: None,
+            approval_channel: None,
+            approval_target: None,
+        }
+    }
+
+    #[test]
+    fn invalid_config_is_skipped_with_warning() {
+        // A hand-edited config must not crash the daemon — the invalid agent
+        // is skipped (with a warn log) while valid ones still load.
+        let mut invalid = config("broken");
+        invalid.resume_command = Some("agent --prompt \"{PROMPT}\"".into()); // missing {SESSION}
+        let valid = config("good");
+        let registry = AgentRegistry::from_configs(&[invalid, valid]);
+        assert!(registry.get("broken").is_none());
+        assert!(registry.get("good").is_some());
+    }
+
+    #[test]
+    fn disabled_config_is_skipped() {
+        let mut disabled = config("off");
+        disabled.enabled = false;
+        let registry = AgentRegistry::from_configs(&[disabled]);
+        assert!(registry.is_empty());
     }
 }

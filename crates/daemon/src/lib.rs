@@ -446,6 +446,10 @@ impl Daemon {
                 "Agent command must not be empty.".into(),
             ));
         }
+        // Write paths are fail-loud: an invalid config is rejected at the
+        // boundary instead of being persisted (and then silently skipped on
+        // the next registry rebuild).
+        agent.validate().map_err(DaemonError::Message)?;
         if self.config.agent(&agent.id).is_some() {
             return Err(DaemonError::Message(format!(
                 "An agent with id `{}` already exists.",
@@ -1973,6 +1977,47 @@ mod tests {
         if let Some(parent) = daemon.config_path.parent() {
             let _ = std::fs::remove_dir_all(parent);
         }
+    }
+
+    #[test]
+    fn add_agent_rejects_invalid_config_before_persisting() {
+        // Write paths are fail-loud: a session agent whose resume_command
+        // misses {SESSION} is rejected at the boundary — never persisted,
+        // never silently skipped by a later registry rebuild.
+        let mut daemon = test_daemon(Config::default_config());
+        let mut invalid = AgentConfig {
+            id: "broken".into(),
+            name: "Broken".into(),
+            kind: AgentKind::Session,
+            command: "agent --prompt \"{PROMPT}\"".into(),
+            description: None,
+            working_dir: None,
+            env: std::collections::HashMap::new(),
+            timeout_secs: None,
+            enabled: true,
+            demo: false,
+            default_action: None,
+            session_glob: Some("~/.broken/*.jsonl".into()),
+            session_cli_list: None,
+            resume_command: Some("agent --prompt \"{PROMPT}\"".into()), // missing {SESSION}
+            permission_marker: None,
+            approval_channel: None,
+            approval_target: None,
+        };
+        let err = daemon.add_agent(invalid.clone()).unwrap_err();
+        assert!(
+            err.to_string().contains("{SESSION}"),
+            "rejection must mention {{SESSION}}: {err}"
+        );
+        assert!(
+            daemon.configured_agents().iter().all(|a| a.id != "broken"),
+            "rejected config must not be persisted"
+        );
+
+        // Fixing resume_command makes the same agent acceptable.
+        invalid.resume_command = Some("agent --resume {SESSION} --prompt \"{PROMPT}\"".into());
+        daemon.add_agent(invalid).expect("valid config accepted");
+        assert!(daemon.registry.get("broken").is_some());
     }
 
     #[test]
