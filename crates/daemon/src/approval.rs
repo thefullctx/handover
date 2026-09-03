@@ -15,12 +15,15 @@
 //! moved on). The `agent` channel is deliberately unimplemented — it fails
 //! loud instead of guessing an agent-specific protocol.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
 use handover_config::ApprovalChannel;
 
 use handover_core::approval::tail_contains_marker;
+
+use crate::status::{compute_live_sessions, LiveSessionsSnapshot};
+use crate::DaemonError;
 
 /// How long to watch a transcript after injecting before failing soft.
 pub const APPROVAL_VERIFY_BUDGET: Duration = Duration::from_secs(10);
@@ -170,6 +173,122 @@ pub fn verify_session_resumed(
             return false;
         }
         std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
+/// A resolved approval request, ready for [`Daemon::execute_approval`].
+/// Carries everything the slow path needs so it can run *outside* the
+/// daemon lock: the injection command, the transcript path, the marker,
+/// and the baseline mtime for verification.
+pub struct ApprovalRequest {
+    pub agent_id: String,
+    pub session_id: String,
+    pub approve: bool,
+    pub path: PathBuf,
+    pub marker: String,
+    pub cmd: Vec<String>,
+    pub baseline: Option<std::time::SystemTime>,
+}
+
+/// Fast (lock-held) half of an approval: validated config and the session
+/// snapshot. [`complete_approval`] re-checks liveness/blocking and builds
+/// the [`ApprovalRequest`] off the lock.
+pub struct ApprovalPlan {
+    pub agent_id: String,
+    pub session_id: String,
+    pub approve: bool,
+    pub marker: String,
+    pub channel: ApprovalChannel,
+    pub target: String,
+    pub snapshot: LiveSessionsSnapshot,
+}
+
+/// Slow half of an approval, off the daemon lock: re-check the session is
+/// live and still blocked, then build the injection command. Returns an
+/// [`ApprovalRequest`] ready for [`execute_approval`].
+pub fn complete_approval(plan: ApprovalPlan) -> Result<ApprovalRequest, DaemonError> {
+    let msg = |m: String| DaemonError::Message(m);
+
+    // The session must be live AND have a transcript to verify.
+    let sessions = compute_live_sessions(&plan.snapshot);
+    let session = sessions
+        .iter()
+        .find(|s| s.agent_id == plan.agent_id && s.session_id == plan.session_id)
+        .ok_or_else(|| {
+            msg(format!(
+                "Session `{}` for `{}` is not live.",
+                plan.session_id, plan.agent_id
+            ))
+        })?;
+    let path = session.path.as_ref().ok_or_else(|| {
+        msg(format!(
+            "Session `{}` has no transcript (cli-list discovery) — approval is \
+             only supported for agents with session files.",
+            plan.session_id
+        ))
+    })?;
+
+    // Race safety: never inject into a session that moved on.
+    if !tail_contains_marker(path, &plan.marker) {
+        return Err(msg(format!(
+            "Session `{}` is no longer blocked — the agent moved on. Nothing was injected.",
+            plan.session_id
+        )));
+    }
+
+    // Build the injection command.
+    let cmd = build_approval_command(&plan.channel, &plan.target, plan.approve)
+        .map_err(DaemonError::Message)?;
+    let baseline = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+
+    Ok(ApprovalRequest {
+        agent_id: plan.agent_id,
+        session_id: plan.session_id,
+        approve: plan.approve,
+        path: path.clone(),
+        marker: plan.marker,
+        cmd,
+        baseline,
+    })
+}
+
+/// Executes a resolved approval: injects the keystroke and polls the
+/// transcript for signs of life. A free function (not a method on `Daemon`)
+/// so callers can run it *without* the daemon lock — injection + verify
+/// polling must never block the palette, the API, or other handoffs.
+pub fn execute_approval(
+    req: &ApprovalRequest,
+    budget: std::time::Duration,
+) -> Result<ApprovalResult, DaemonError> {
+    let verb = if req.approve { "Approved" } else { "Denied" };
+    let status = std::process::Command::new(&req.cmd[0])
+        .args(&req.cmd[1..])
+        .status();
+    match status {
+        Ok(s) if s.success() => {
+            let resumed = req.baseline.is_some()
+                && verify_session_resumed(&req.path, &req.marker, req.baseline.unwrap(), budget);
+            if resumed {
+                Ok(ApprovalResult {
+                    verified: true,
+                    message: format!("{verb} — the agent is working again."),
+                })
+            } else {
+                Ok(ApprovalResult {
+                    verified: false,
+                    message: format!(
+                        "{verb} — decision sent, but couldn't confirm the agent resumed. \
+                         Check the terminal."
+                    ),
+                })
+            }
+        }
+        Ok(s) => Err(DaemonError::Message(format!(
+            "Approval injection failed (exit {s}). Nothing was sent."
+        ))),
+        Err(e) => Err(DaemonError::Message(format!(
+            "Could not run approval injection: {e}"
+        ))),
     }
 }
 
