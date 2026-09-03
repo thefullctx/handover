@@ -1,0 +1,102 @@
+# Handover sample configuration (portable placeholders)
+#
+# Copy to your platform config path and edit:
+#   macOS:   ~/Library/Application Support/handover/config.toml
+#   Linux:   ~/.config/handover/config.toml
+#   Windows: %APPDATA%\handover\config.toml
+#
+# First launch also creates a private `api_token` file next to this config.
+
+[general]
+shortcut = "CmdOrCtrl+Shift+A"   # Settings → General (⌘⇧A / Super+Shift+A by default)
+launch_at_startup = false        # Settings → General (autostart plugin)
+notifications = true             # desktop banners for handoff milestones
+history_retention_days = 7       # planned: persisted history/SQLite (session history exists in-memory)
+appearance = "system"            # "system" | "light" | "dark" (Settings → General)
+ui_opacity = 1.0                 # palette + Settings glass opacity, 0.4–1.0 (Settings slider)
+
+# ---- Agents (first enabled one is the default) -----------------------
+
+[[agents]]
+id = "demo-echo"
+name = "Echo (demo)"
+kind = "command"
+# Demo sink: records handoffs to a local file so you can verify the loop
+# without a real agent. Replace with a real agent when ready.
+command = "sh -c 'tee \"$HANDOVER_DEMO_SINK\"'"
+description = "Records every handoff for end-to-end verification (demo only)."
+timeout_secs = 60
+enabled = true
+demo = true
+
+# ---- Adding an agent ---------------------------------------------------
+# Easiest: open Settings → Agents (curated gallery + custom command setup),
+# or press the hotkey and choose  ⚙ Manage agents  at the bottom of the chat
+# home. It persists to this file and is available immediately (no restart).
+#
+# Command substitution:
+#   "{PROMPT}"        rendered prompt, shell-quoted on the command line
+#   "{PROMPT_FILE}"   path to a temp file containing the prompt
+#   (neither)         prompt is piped to the command on stdin
+# Give long-running agents (Hermes, Codex, …) a generous timeout_secs (300+;
+# the default is 120s). The first enabled agent is the default.
+
+# Example real agents (disabled by default — enable after installing them):
+
+# [[agents]]
+# id = "my-agent"
+# name = "My Agent"
+# kind = "command"
+# command = "my-agent --prompt \"{PROMPT}\""
+# # Or: command = "my-agent --file \"{PROMPT_FILE}\""
+# # Or: command = "my-agent"   # prompt on stdin
+# description = "Your local coding agent"
+# working_dir = "~/Projects"
+# timeout_secs = 300
+# enabled = true
+# demo = false
+
+# Real-world one-shot command examples:
+#   hermes:   command = "/Users/you/.local/bin/hermes -z \"{PROMPT}\""
+#   codex:    command = "/Users/you/.local/bin/codex exec \"{PROMPT}\""
+#   opencode: command = "/Users/you/.opencode/bin/opencode run \"{PROMPT}\""
+#   claude:   command = "claude -p \"{PROMPT_FILE}\""
+
+# Session-aware agent example (resume into live sessions — Hermes):
+# [[agents]]
+# id = "hermes"
+# name = "Hermes"
+# kind = "session"
+# command = "/Users/you/.local/bin/hermes -z \"{PROMPT}\""  # fresh send: one-shot, final response only
+# session_cli_list = [
+#     "/Users/you/.local/bin/hermes", "sessions", "list", "--source", "cli", "--limit", "20",
+# ]
+# resume_command = "/Users/you/.local/bin/hermes chat -Q -q \"{PROMPT}\" --reasoning none --resume {SESSION}"
+#   # -Q (quiet) + --reasoning none keep resume output to just the final
+#   # response — no banner, reasoning dump, or workspace-restore notice.
+
+# ---- Per-action agent preferences ------------------------------------
+# action id -> preferred agent id (used by the CLI/API, e.g. `handover send
+# --action fix`). The palette is chat-first and doesn't choose actions.
+
+[preferences]
+# fix = "my-agent"
+# explain = "my-agent"
+
+# ---- Privacy ---------------------------------------------------------
+
+[privacy]
+excluded_paths = [
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    "credentials*",
+    "id_rsa",
+    "id_ed25519",
+    "~/.ssh/*",
+]
+# planned: frontmost-app filtering not implemented yet
+excluded_apps = []

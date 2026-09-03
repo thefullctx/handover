@@ -1,0 +1,15 @@
+[package]
+name = "handover-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Handover domain model: captures, actions, agents, prompts, security exclusions"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+dirs.workspace = true
+libc = "0.2"

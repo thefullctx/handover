@@ -1,0 +1,38 @@
+/* ==========================================================================
+   Typography — match ChatGPT desktop
+   ChatGPT for macOS uses OpenAI Sans (bundled in their app; same files are
+   published on cdn.openai.com). We load local woff2 copies for offline use.
+   Proprietary typeface — not for redistribution beyond this personal app.
+   ========================================================================== */
+
+@font-face {
+  font-family: "OpenAI Sans";
+  src: url("../assets/fonts/OpenAISans-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "OpenAI Sans";
+  src: url("../assets/fonts/OpenAISans-Medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "OpenAI Sans";
+  src: url("../assets/fonts/OpenAISans-Semibold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "OpenAI Sans";
+  src: url("../assets/fonts/OpenAISans-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}

@@ -1,0 +1,1073 @@
+/* ==========================================================================
+   Handover Settings — same glass language and tokens as palette, native
+   macOS utility feel. SF Pro system font stack via tokens.
+   ========================================================================== */
+
+.settings-window {
+  height: 100%;
+  display: flex;
+  /* Same solid glass-fill as the palette card — no extra see-through. */
+  background: var(--glass-fill);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.settings-window button,
+.settings-window input,
+.settings-window textarea,
+.settings-window select {
+  font-family: inherit;
+}
+
+/* --------------------------------------------------------------------------
+   Sidebar navigation
+   -------------------------------------------------------------------------- */
+.settings-sidebar {
+  width: 196px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 var(--sp-2) var(--sp-3);
+  /* Same material as the palette card surface. */
+  background: var(--glass-fill);
+  border-right: 1px solid var(--border);
+  box-shadow: inset -1px 0 0 0 var(--glass-rim-inner);
+  border-radius: var(--r-2xl) 0 0 var(--r-2xl);
+}
+
+/* The Overlay title bar (see Rust `settings_window_builder`) draws the
+   native traffic lights over this strip — so the brand row is exactly the
+   52px title-bar height, cleared ~78px for the lights, and doubles as the
+   window drag region. This is the macOS pattern of chrome-as-part-of-the-UI. */
+.settings-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 52px;
+  padding: 0 var(--sp-2) 0 78px;
+  flex-shrink: 0;
+  /* Dragging is driven by the `data-tauri-drag-region` attribute (Tauri v2
+     ignores the old `-webkit-app-region` property); the cursor just says
+     it's grabbable. */
+  cursor: grab;
+  color: var(--text);
+}
+
+.settings-brand:active {
+  cursor: grabbing;
+}
+
+/* No traffic lights off macOS — the clearance becomes plain padding. */
+html:not(.is-mac) .settings-brand {
+  padding-left: var(--sp-2);
+}
+
+.settings-brand .brand-title {
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  letter-spacing: 0.1px;
+}
+
+.settings-brand .handover-mark {
+  display: block;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.settings-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  padding: 8px 12px;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.settings-nav svg {
+  color: var(--text-tertiary);
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.settings-nav:hover {
+  background: var(--pill-fill);
+  color: var(--text);
+}
+
+/* Active tab: soft pill, accent icon (glass language, no hard rail). */
+.settings-nav.active {
+  background: var(--pill-fill-strong);
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
+  font-weight: 600;
+}
+
+.settings-nav.active svg {
+  color: var(--accent);
+  filter: drop-shadow(0 0 3px var(--accent-glow));
+}
+
+.settings-sidebar-spacer {
+  flex: 1;
+}
+
+/* --------------------------------------------------------------------------
+   Main column
+   -------------------------------------------------------------------------- */
+.settings-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  /* Same fill as sidebar / palette card so opacity matches the app shell. */
+  background: var(--glass-fill);
+  font-family: var(--font-sans);
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-5) var(--sp-5) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  animation: step-in var(--dur) var(--ease-out);
+}
+
+.settings-head:active {
+  cursor: grabbing;
+}
+
+.settings-sub {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+}
+
+/* Page intro (no duplicate tab title / blue underline). */
+.settings-sub-lead {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: 0.1px;
+  font-family: var(--font-sans);
+}
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-5) var(--sp-5);
+  max-width: 720px;
+  /* Tabs enter with the palette's quiet step transition. */
+  animation: step-in var(--dur) var(--ease-out);
+}
+
+.settings-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-top: var(--sp-3);
+  padding-bottom: 2px;
+  font-weight: 600;
+}
+
+.settings-section::before {
+  content: "";
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+.settings-section:first-child {
+  margin-top: 0;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding-top: var(--sp-1);
+}
+
+/* --------------------------------------------------------------------------
+   Rows + controls
+   -------------------------------------------------------------------------- */
+.info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--pill-fill);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
+  transition: background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.info-row:active {
+  transform: translateY(0.5px);
+}
+
+.info-row:hover {
+  background: var(--pill-fill-strong);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-1), inset 0 1px 0 0 var(--glass-rim-inner);
+}
+
+.info-row.col {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.info-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+.info-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+.info-value {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.info-value code {
+  font-size: 11.5px;
+}
+
+/* Segmented control (appearance) — pill track */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  align-self: flex-start;
+  background: var(--pill-fill);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+}
+
+.seg-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 5px 14px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.seg-btn:hover {
+  color: var(--text);
+}
+
+.seg-btn:active {
+  transform: translateY(0.5px);
+}
+
+.seg-btn.active {
+  background: var(--pill-fill-strong);
+  border-color: var(--border);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-1), inset 0 1px 0 0 var(--glass-rim-inner);
+}
+
+/* Opacity slider (Appearance) — shared palette + Settings surface alpha. */
+.opacity-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+}
+
+.opacity-value {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  min-width: 3.2em;
+  text-align: right;
+}
+
+.opacity-slider {
+  width: 100%;
+  margin-top: 2px;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+.opacity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--circle-btn);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+}
+
+.opacity-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--circle-btn);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+}
+
+.opacity-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* Toggle (native-style switch) */
+.switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.switch:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 3px var(--surface-3);
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-1);
+  transition: transform var(--dur) var(--ease-out);
+}
+
+.switch:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch:checked::after {
+  transform: translateX(16px);
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Fields */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.2px;
+}
+
+.field-hint {
+  opacity: 0.7;
+  font-size: 10px;
+}
+
+.field input[type="text"],
+.field input:not([type]),
+.field input[type="password"],
+.field textarea {
+  padding: 10px 14px;
+  background: var(--pill-fill);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.field input:hover,
+.field textarea:hover {
+  border-color: var(--border-strong);
+}
+
+.field input:focus,
+.field textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  background: var(--pill-fill-strong);
+}
+
+.field input::placeholder,
+.field textarea::placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 120px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  user-select: text;
+}
+
+.field.check {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.field.check input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.form-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.manage-error {
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--error-soft);
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  color: var(--error);
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+/* Shortcut recorder */
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.shortcut-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--pill-fill);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 5px 11px;
+  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
+}
+
+.shortcut-record {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 5px 11px;
+  background: var(--accent-softer);
+  border: 1px dashed var(--accent-glow);
+  border-radius: var(--r-sm);
+}
+
+/* Keyboard cheat sheet (General → Keyboard shortcuts) */
+.shortcut-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.shortcut-grid-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 8px 14px;
+  background: var(--pill-fill);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
+  transition: background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.shortcut-grid-row:hover {
+  background: var(--pill-fill-strong);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-1), inset 0 1px 0 0 var(--glass-rim-inner);
+}
+
+.shortcut-grid-keys {
+  display: inline-flex;
+  gap: 4px;
+  min-width: 88px;
+  justify-content: flex-end;
+}
+
+.shortcut-grid-keys kbd {
+  min-width: 24px;
+  text-align: center;
+}
+
+.shortcut-grid-action {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* --------------------------------------------------------------------------
+   Agent gallery + configured list
+   -------------------------------------------------------------------------- */
+.gallery-card {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--pill-fill);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
+  transition: border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.gallery-card:active {
+  transform: translateY(0.5px);
+}
+
+.gallery-card:hover {
+  border-color: var(--border-strong);
+  background: var(--pill-fill-strong);
+  box-shadow: var(--shadow-1), inset 0 1px 0 0 var(--glass-rim-inner);
+}
+
+.gallery-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.gallery-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.gallery-desc {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.gallery-cmd {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gallery-cmd code {
+  font-size: 10.5px;
+}
+
+.gallery-actions {
+  flex-shrink: 0;
+}
+
+.configure-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--accent-softer);
+  border: 1px solid var(--accent-glow);
+  border-radius: var(--r-md);
+  animation: step-in var(--dur) var(--ease-out);
+}
+
+.configure-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.configure-row {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.configure-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  background: var(--pill-fill-strong);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  outline: none;
+}
+
+.configure-row input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.manage-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 10px 12px;
+  border-radius: var(--r-lg);
+  background: var(--pill-fill);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
+  transition: border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.manage-row:hover {
+  border-color: var(--border-strong);
+  background: var(--pill-fill-strong);
+  box-shadow: var(--shadow-1), inset 0 1px 0 0 var(--glass-rim-inner);
+}
+
+.manage-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-shrink: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Unified agent list — one adaptive card per assistant.
+   -------------------------------------------------------------------------- */
+.agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border-radius: var(--r-lg);
+  background: var(--pill-fill);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
+  transition: border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+
+.agent-card:hover {
+  border-color: var(--border-strong);
+  background: var(--pill-fill-strong);
+}
+
+/* Hidden-from-palette and demo cards rest quieter. */
+.agent-card.off,
+.agent-card.demo {
+  background: transparent;
+}
+
+.agent-card.demo {
+  border-style: dashed;
+  opacity: 0.75;
+}
+
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.agent-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--r-tile, 9px);
+  background: var(--pill-fill);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
+}
+
+.agent-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.agent-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.agent-status {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.agent-sessions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.agent-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.menu-btn:hover,
+.menu-btn[aria-expanded="true"] {
+  background: var(--hover-fill);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* Expanded command details (View command). */
+.cmd-details {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cmd-details code {
+  font-size: 11px;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.cmd-details .btn {
+  align-self: flex-start;
+}
+
+/* ⋯ overflow menu + click-away backdrop. */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.menu-pop {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: 10px;
+  z-index: 41;
+  min-width: 168px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--surface-solid, var(--bg-elevated));
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-2);
+  animation: step-in var(--dur-fast) var(--ease-out);
+}
+
+.menu-pop button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--r-sm, 7px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-pop button:hover:not(:disabled) {
+  background: var(--hover-fill);
+  color: var(--text);
+}
+
+.menu-pop button.danger {
+  color: var(--error);
+}
+
+.menu-pop button.danger.armed {
+  background: var(--error-soft);
+}
+
+.menu-note {
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* Visibility switch (palette on/off) — compact macOS-style toggle.
+   The checkbox is visually hidden but keeps native a11y/focus behavior. */
+.toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-right: var(--sp-1);
+  cursor: pointer;
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+
+.toggle-track {
+  width: 30px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);
+  transition: background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+  pointer-events: none;
+}
+
+.toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.toggle input:checked + .toggle-track {
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.toggle input:checked + .toggle-track::after {
+  transform: translateX(12px);
+}
+
+.toggle input:focus-visible + .toggle-track {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.toggle.busy {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.manage-row .row-sub code {
+  font-size: 11px;
+}
+
+/* Session-aware agent rows: discovery + resume command line, and the
+   "Detect session" result chips. */
+.manage-row .session-sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.manage-row .session-sub code {
+  color: var(--text-secondary);
+}
+
+.manage-row .session-detected {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   About
+   -------------------------------------------------------------------------- */
+.about-body {
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-2);
+}
+
+.about-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: transparent;
+  border: none;
+  margin-top: var(--sp-2);
+  box-shadow: var(--shadow-1);
+}
+
+.about-logo .handover-mark {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.about-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.1px;
+  font-family: var(--font-sans);
+}
+
+.about-version {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.about-blurb {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 420px;
+}
+
+.about-body .info-row {
+  width: 100%;
+  text-align: left;
+}
+
+.about-license {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: var(--sp-2);
+}
+
+.diagnostics-box {
+  width: 100%;
+  max-width: 480px;
+  max-height: 180px;
+  overflow-y: auto;
+  text-align: left;
+  background: var(--pill-fill);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  user-select: text;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
+}

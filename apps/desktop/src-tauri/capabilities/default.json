@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capabilities for the Handover palette and settings windows",
+  "windows": ["main", "settings"],
+  "permissions": [
+    "core:default",
+    "notification:default",
+    "core:window:allow-start-dragging"
+  ]
+}

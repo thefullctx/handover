@@ -1,0 +1,13 @@
+[package]
+name = "handover-agents"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Handover agent integrations: generic command agent and registry"
+
+[dependencies]
+handover-core = { path = "../core" }
+handover-config = { path = "../config" }
+uuid.workspace = true
+dirs.workspace = true
+libc = "0.2"

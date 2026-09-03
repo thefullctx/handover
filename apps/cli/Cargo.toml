@@ -1,0 +1,17 @@
+[package]
+name = "handover-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Handover CLI — a thin client of the Handover daemon"
+
+[[bin]]
+name = "handover"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = "1"
+chrono = { workspace = true }
+ureq = { version = "2", features = ["json"] }
+handover-config = { path = "../../crates/config" }

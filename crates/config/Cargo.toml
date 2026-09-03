@@ -1,0 +1,15 @@
+[package]
+name = "handover-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Handover configuration: agents, preferences, privacy, general settings"
+
+[dependencies]
+handover-core = { path = "../core" }
+serde.workspace = true
+toml = "0.8"
+dirs.workspace = true
+thiserror.workspace = true
+log.workspace = true
+uuid.workspace = true
