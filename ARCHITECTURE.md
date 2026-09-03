@@ -313,6 +313,44 @@ polling never block the palette, the API, or handoffs in flight:
 Approval needs a transcript *file* — cli-list agents (Hermes) and remote/container
 sessions are out of scope by design.
 
+### Per-agent session facts (Phase 0)
+
+The per-agent facts discovery is built on, verified on-machine 2026-08-14
+(web research + `scripts/probe-sessions.sh`, which reads filenames + mtimes
+only). Claude Code was not installed on the verification machine — its catalog
+entry is kept, best-effort until tested. This table is the **maintenance point
+for agent CLI drift**: keep it in sync with `session_id_from_filename()` in
+`handover-core` and `builtin_session_agents()` in `handover-config`.
+
+| agent | sessions on disk | resume (interactive) | resume (headless) | streams |
+|---|---|---|---|---|
+| claude | `~/.claude/projects/<proj>/<uuid>.jsonl` (not installed here — best-effort) | `claude --resume <id>` / `claude --continue` | `claude -p "{P}" --resume <id>` | `-p` streams |
+| codex | `~/.codex/sessions/<Y>/<M>/<D>/rollout-<ts>-<uuid>.jsonl` (trailing uuid = id) | `codex resume <id>` / `codex resume` (freshest) | `codex exec resume <id>` / `codex exec --last` | exec streams, `-o json` |
+| droid | `~/.factory/sessions/<enc-cwd>/<uuid>.jsonl` (per-session `.settings.json` sibling) | `droid --resume [id]` (`-r`, defaults to last modified) | `droid exec -s <id> "{P}"` / `droid exec -s <id> -f file` | `-o stream-json` / `-o json` |
+| omp | `~/.omp/agent/sessions/<enc-cwd>/<ts>_<sessionId>.jsonl` (id after last `_`) + breadcrumbs `terminal-sessions/<tid>` | `omp -r <id>` (id prefix OK, picker if omitted) / `omp -c` | `omp -p "{P}" -r <id>` / `omp -p "{P}" -c` | `-p` streams, `--print-thoughts` |
+| hermes | SQLite `~/.hermes/state.db` (FTS5) — no fs glob; use `hermes sessions list`. Id format `20260812_130220_dbf5cf` | `hermes --resume <id>` (`-r`) / `--continue` (`-c`) by id or title | `hermes chat -q "{P}" --resume <id>` / `--resume latest --in <dir>` | `chat -q` streams |
+
+Key findings from the verification:
+
+- **Hermes is SQLite, not files** — session discovery must shell out to
+  `hermes sessions list` (read-only metadata) or query the DB; the
+  "glob filename = id" trick does not apply. Everything else globs.
+- **Session-id extraction is not uniform**: the codex id is the trailing uuid
+  after `rollout-<ts>-`; the omp id is the part after the last `_`; droid and
+  claude are bare uuids; hermes ids are ts-based strings. `omp --profile`
+  relocates the whole `~/.omp/agent` tree, so profile-aware sessions would
+  need the profile path, not a fixed glob.
+- **omp writes terminal breadcrumbs** (`terminal-sessions/<terminal-id>`:
+  cwd + session file + optional `fresh` line) — a potential stronger "the
+  session the user was just in" signal than raw mtime.
+- **droid**: `droid search` exists for session search; exec streams structured
+  output; permission model via `--auto` levels + `--skip-permissions-unsafe`
+  (an approval-layer surface).
+- **hermes**: `hermes approvals` subcommand + status bar show session state;
+  `--yolo` auto-approves. Approval-layer facts (marker formats, tty-injection
+  viability) still need per-agent manual verification with a real running
+  agent.
+
 ## Config recovery
 
 `Config::ensure` / `ensure_at`:

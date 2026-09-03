@@ -14,6 +14,12 @@
 //! blocked immediately before injecting (never inject into a session that
 //! moved on). The `agent` channel is deliberately unimplemented — it fails
 //! loud instead of guessing an agent-specific protocol.
+//!
+//! Residual risk, accepted: detection trusts the transcript tail, so a
+//! hostile agent can print the marker itself and appear blocked. The
+//! ceiling of that spoof is a spoofed prompt — injection only ever sends
+//! a single `y`/`n` keystroke to a validated, user-configured target, and
+//! the user still clicks Approve/Deny explicitly.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};

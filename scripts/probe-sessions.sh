@@ -3,7 +3,7 @@
 #
 # Lists the most recently touched agent session files on this machine, one
 # line per session, freshest first. Used to verify the session-discovery
-# assumptions in docs/new_idea_for_handover.txt before any product code is written.
+# assumptions in ARCHITECTURE.md ("Per-agent session facts"); kept as a dev probe.
 #
 # PRIVACY: this tool reads FILENAMES and MTIMES only. It never opens or reads
 # session/transcript contents. The one exception is Hermes, which stores

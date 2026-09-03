@@ -509,7 +509,7 @@ impl Config {
 /// The built-in catalog of session-aware agents (reference adapters).
 ///
 /// Every entry is a full [`AgentConfig`] with the session-aware fields from
-/// the Phase 0 facts table (see docs/new_idea_for_handover.txt). They are NOT
+/// the Phase 0 facts table (see ARCHITECTURE.md, "Per-agent session facts"). They are NOT
 /// written into the user's config.toml — the daemon overlays them on demand
 /// so session-awareness works with zero configuration. Any entry can be
 /// overridden by configuring an agent with the same id.

@@ -126,8 +126,8 @@ pub fn is_stale(updated_at: DateTime<Utc>, now: DateTime<Utc>, staleness: Durati
 /// Extracts the session id from a session transcript filename.
 ///
 /// Per-agent rules (verified on-machine 2026-08-14; see the Phase 0 facts
-/// table in docs/new_idea_for_handover.txt). This is the maintenance point for
-/// agent CLI drift — keep in sync with the docs table.
+/// table in ARCHITECTURE.md, "Per-agent session facts"). This is the
+/// maintenance point for agent CLI drift — keep in sync with that table.
 pub fn session_id_from_filename(agent_id: &str, path: &Path) -> Option<String> {
     let stem = path.file_name()?.to_str()?.strip_suffix(".jsonl")?;
     match agent_id {

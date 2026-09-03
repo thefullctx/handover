@@ -4,8 +4,7 @@ Thanks for helping with Handover! The project is small on purpose, and it stays 
 only if every addition earns its place. Please read this before opening an issue or PR.
 
 For **current product behavior** (config paths, privacy, CLI, API), prefer
-[README.md](README.md) and [ARCHITECTURE.md](ARCHITECTURE.md). The files under
-`docs/plan/` are a **historical** record of the first build day, not live docs.
+[README.md](README.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Ground rules
 
@@ -43,7 +42,6 @@ crates/config         TOML config, defaults, per-action preferences, privacy rul
 crates/agents         Generic command agent + registry
 crates/daemon         Orchestration + local HTTP API (also embedded by the desktop app)
 docs/sample-config.toml   Portable sample config (placeholders; not personal machines)
-docs/plan/            Historical build notes — not authoritative for current behavior
 scripts/              smoke-test.sh (end-to-end), verify.sh (full release matrix)
 ```
 
