@@ -94,6 +94,10 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
    cargo test --workspace --lib
    ```
 
+   One daemon test shells out to real macOS AppleScript (`notify.rs`, `osascript`); it is
+   opt-in because it can error under load or in headless sessions. Run it explicitly with
+   `HANDOVER_TEST_OSASCRIPT=1`; otherwise it prints a skip notice.
+
    **Critical — tests must never write the real user config.**
 
    - `Daemon` persists preferences to `daemon.config_path`, not always the platform path.

@@ -209,6 +209,10 @@ agent.send(AgentRequest { capture, action, prompt, session })
 SendOutcome { id, ok, agent_id, agent_name, action_id, capture, created_at, prompt, receipt, error }
 ```
 
+Image captures hand off by path BY DESIGN: the privacy exclusions still run against the path
+(path-only checks, no file opened), but the bytes are never read or binary-sniffed, so image
+handoffs carry no `file_note`. Only `File` captures are read (≤ 1 MiB) and sniffed.
+
 Errors are humanized (`AgentError` → plain messages; never raw stack traces in the UI).
 
 On the desktop app, resolve happens under the daemon mutex (fast); `agent.send` runs on a
@@ -388,7 +392,7 @@ without touching the user's real cache.
 | Config | `[privacy] excluded_paths` glob list, extensible by the user |
 | Core | `is_excluded_path()` matches path against exclusions **before any read** (case-insensitive) |
 | Daemon | File captures **and palette drops**: exclusion check → resolve-path check → `O_NOFOLLOW` open of the **leaf** → size cap → binary/UTF-8 sniffing. Intermediate directory TOCTOU is out of scope (trusted parents / single-user desktop). |
-| Network | API bound to loopback only; mutating routes require a local bearer token; `GET /agents` redacts command lines to `"configured command"` |
+| Network | API bound to loopback only; mutating routes require a local bearer token; `GET /agents` redacts command lines to `"configured command"`; unauthenticated GET bursts are bounded by an in-flight request cap (overflow → 503) |
 | Session discovery | filenames + mtimes only; symlinks never followed; cli-list (Hermes) is a read-only metadata listing — **never** transcript contents |
 | Approval (opt-in) | the ONE exception: only agents with a `permission_marker` configured have the last 8 KB of a live session's transcript tail-peeked for that marker; buffer dropped immediately, never stored or sent; `blocked` stays `None` for every other agent |
 
