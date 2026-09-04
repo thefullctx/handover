@@ -54,7 +54,7 @@ use handover_config::{
 };
 use handover_core::action::{builtin_actions, find_action, Action};
 use handover_core::agent::{AgentError, AgentMetaStatus, AgentRequest};
-use handover_core::capture::Capture;
+use handover_core::capture::{Capture, ContentKind};
 use handover_core::exclusions::is_excluded_path;
 use handover_core::prompt::render_action_prompt;
 use handover_core::session::{LiveSession, SessionSpec};
@@ -611,6 +611,16 @@ impl Daemon {
 
     /// Reads a captured file into the capture (respecting exclusions and a
     /// size cap) so it can be attached to the prompt.
+    ///
+    /// The privacy exclusions run for ANY path-carrying capture (path-only
+    /// checks, no file opened) — an image capture pointing at `.env` must be
+    /// refused just like a file capture.
+    ///
+    /// Only `File` captures are READ and embedded, though. Image captures
+    /// hand off by PATH BY DESIGN (the agent opens the file itself) — reading
+    /// the bytes just to discover they are binary would stamp every image
+    /// handoff with a misleading `file_note` ("binary file — contents not
+    /// embedded") and waste an up-to-1 MiB read.
     fn enrich_file_capture(&self, capture: &mut Capture) -> Result<(), String> {
         let path = match &capture.content.path {
             Some(p) => p.clone(),
@@ -634,6 +644,9 @@ impl Daemon {
             }
         }
 
+        if capture.content.kind != ContentKind::File {
+            return Ok(());
+        }
         let (meta, bytes) = read_file_nofollow(path_ref, MAX_FILE_CAPTURE_BYTES)?;
         if !meta.is_file() {
             return Ok(());
@@ -2633,6 +2646,48 @@ mod tests {
         {
             let _ = (secret, link);
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn image_capture_is_path_only_no_binary_note() {
+        // Images hand off by PATH BY DESIGN: enrichment must not read the
+        // bytes (they are binary) and must not stamp the prompt with a
+        // misleading "binary file — contents not embedded" / "not attached"
+        // note. Regression: image captures used to fall through the same
+        // file-enrichment path as text files.
+        let dir = std::env::temp_dir().join(format!("ho-img-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // A tiny real PNG header: binary (NUL bytes), under the size cap.
+        let png: Vec<u8> = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let path = dir.join("shot.png");
+        std::fs::write(&path, &png).unwrap();
+
+        let daemon = test_daemon(Config::default_config());
+        let capture = Capture::image(path.to_string_lossy().to_string());
+        let prompt = daemon
+            .render_prompt("ask", capture)
+            .expect("render should succeed");
+        assert!(
+            prompt.contains("Attached image: ") && prompt.contains("shot.png"),
+            "image must be attached by path: {prompt}"
+        );
+        assert!(
+            !prompt.contains("File note") && !prompt.contains("binary"),
+            "image must not carry a binary/file-note: {prompt}"
+        );
+
+        // The privacy exclusions still apply to image captures (path-only
+        // check — an image "pointing" at a secret is refused, not attached
+        // by path).
+        let excluded = Capture::image("/tmp/project/.env".to_string());
+        let err = daemon
+            .render_prompt("ask", excluded)
+            .expect_err("excluded image path must be refused");
+        assert!(
+            err.to_string().contains("Refusing"),
+            "image to an excluded path must be refused: {err}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

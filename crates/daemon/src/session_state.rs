@@ -42,31 +42,12 @@ pub(crate) fn load_session_state(path: &Path) -> SessionState {
     }
 }
 
-/// Writes the session-state file (mode 0600). Best-effort: a failure to
-/// persist a pin is logged, never fatal.
+/// Writes the session-state file (mode 0600), atomically (temp + rename — a
+/// crash mid-write never leaves a truncated state file). Best-effort: a
+/// failure to persist a pin is logged, never fatal.
 pub(crate) fn save_session_state(path: &Path, state: &SessionState) -> Result<(), DaemonError> {
     let raw = serde_json::to_string_pretty(state)
         .map_err(|e| DaemonError::Message(format!("session state serialize: {e}")))?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| DaemonError::Message(format!("{e}")))?;
-    }
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)
-            .map_err(|e| DaemonError::Message(format!("{e}")))?;
-        file.write_all(raw.as_bytes())
-            .map_err(|e| DaemonError::Message(format!("{e}")))?;
-        Ok(())
-    }
-    #[cfg(not(unix))]
-    {
-        std::fs::write(path, raw).map_err(|e| DaemonError::Message(format!("{e}")))
-    }
+    handover_config::atomic_write_private(path, raw.as_bytes())
+        .map_err(|e| DaemonError::Message(format!("session state write: {e}")))
 }

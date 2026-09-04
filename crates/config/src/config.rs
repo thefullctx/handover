@@ -455,31 +455,11 @@ impl Config {
     }
 
     pub fn save_to(&self, path: &std::path::Path) -> Result<(), ConfigError> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| Message(format!("{e}")))?;
-        }
         let raw = toml::to_string_pretty(self).map_err(|e| Message(format!("{e}")))?;
         // config.toml can carry agent env vars and commands — owner-only,
-        // matching the API token and session state files.
-        #[cfg(unix)]
-        {
-            use std::io::Write;
-            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-            let mut f = std::fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(path)
-                .map_err(|e| Message(format!("{e}")))?;
-            f.write_all(raw.as_bytes())
-                .map_err(|e| Message(format!("{e}")))?;
-            // An existing file keeps any prior (looser) mode — enforce 0600.
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-                .map_err(|e| Message(format!("{e}")))?;
-        }
-        #[cfg(not(unix))]
-        std::fs::write(path, raw).map_err(|e| Message(format!("{e}")))?;
+        // matching the API token and session state files. Atomic (temp +
+        // rename): a crash mid-save never leaves a truncated config.
+        atomic_write_private(path, raw.as_bytes()).map_err(|e| Message(format!("{e}")))?;
         Ok(())
     }
 
@@ -660,32 +640,70 @@ fn write_defaults_to(path: &std::path::Path) -> Config {
     config
 }
 
-fn write_private_string(path: &std::path::Path, contents: &str) -> Result<(), ConfigError> {
+/// Atomically writes owner-only (0600) contents: write to a temp sibling in
+/// the same directory, fsync, then `rename` over the target.
+///
+/// A crash or kill between write and rename leaves either the OLD file or
+/// the NEW one — never a truncated file. The previous in-place truncate
+/// could destroy the user's config (agents, preferences, exclusions) on a
+/// crash mid-write, after which the parse-error recovery would silently
+/// replace it with defaults.
+///
+/// Non-Unix falls back to a direct write: Windows `rename` semantics do not
+/// replace an existing destination, so the temp+rename dance is not atomic
+/// there (and those targets are outside the supported runtime matrix).
+pub fn atomic_write_private(path: &std::path::Path, contents: &[u8]) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::io::Write;
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)
-            .map_err(|e| Message(format!("{e}")))?;
-        file.write_all(contents.as_bytes())
-            .map_err(|e| Message(format!("{e}")))?;
-        file.write_all(b"\n").map_err(|e| Message(format!("{e}")))?;
-        drop(file);
-        // `mode(0o600)` applies only on creation: tighten pre-existing files
-        // (e.g. token written before this hardening) to owner-only.
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-        Ok(())
+        use std::os::unix::fs::OpenOptionsExt;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        let file_name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "handover-file".to_string());
+        let tmp = parent.join(format!(".{file_name}.tmp-{}", uuid::Uuid::new_v4()));
+        let result = (|| -> std::io::Result<()> {
+            // `create_new` + `mode(0o600)`: the temp file is owner-only from
+            // the first byte, and the rename preserves that mode — no window
+            // where an existing (looser) config mode carries over.
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&tmp)?;
+            file.write_all(contents)?;
+            file.sync_all()?;
+            drop(file);
+            std::fs::rename(&tmp, path)?;
+            // Best-effort durability of the rename itself (fsync the dir).
+            if let Ok(dir) = std::fs::File::open(parent) {
+                let _ = dir.sync_all();
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        result
     }
     #[cfg(not(unix))]
     {
-        std::fs::write(path, format!("{contents}\n")).map_err(|e| Message(format!("{e}")))?;
-        Ok(())
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, contents)
     }
+}
+
+fn write_private_string(path: &std::path::Path, contents: &str) -> Result<(), ConfigError> {
+    let mut data = contents.as_bytes().to_vec();
+    data.push(b'\n');
+    atomic_write_private(path, &data).map_err(|e| Message(format!("{e}")))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1002,6 +1020,48 @@ enabled = true
             approval_target: None,
         };
         assert!(agent.validate().is_err());
+    }
+
+    #[test]
+    fn atomic_write_private_replaces_cleanly_at_0600() {
+        let dir = std::env::temp_dir().join(format!("ho-atomic-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        std::fs::write(&path, "old contents").unwrap();
+
+        // Overwrite an existing file.
+        atomic_write_private(&path, b"new contents").expect("atomic write");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "new contents",
+            "target must hold the new contents"
+        );
+
+        // No temp siblings left behind.
+        let leftovers: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains(".tmp-"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temp files must be cleaned up: {leftovers:?}"
+        );
+
+        // The write path (parent dirs) is created on demand.
+        let nested = dir.join("deep/nested/api_token");
+        atomic_write_private(&nested, b"tok\n").expect("atomic write into new dirs");
+        assert_eq!(std::fs::read_to_string(&nested).unwrap(), "tok\n");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "atomic writes must stay owner-only");
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
