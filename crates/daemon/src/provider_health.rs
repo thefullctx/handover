@@ -511,9 +511,23 @@ mod tests {
         assert!(ProviderEndpoint::parse("https://host:99999/x").is_none());
     }
 
+    /// A unique temp dir for a provider-health test. Must include randomness:
+    /// a pid-only dir collides when the OS recycles a pid from an earlier
+    /// (possibly killed, cleanup-skipped) run — `CREATE TABLE` then fails on
+    /// the leftover db, which flaked under repeated workspace runs.
+    fn prov_test_dir(prefix: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "ho-prov-{prefix}-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
     #[test]
     fn hermes_config_yields_active_model_block_base_url() {
-        let dir = std::env::temp_dir().join(format!("ho-prov-{}", std::process::id()));
+        let dir = prov_test_dir("cfg");
         let cfg = dir.join(".hermes");
         std::fs::create_dir_all(&cfg).unwrap();
         std::fs::write(
@@ -524,7 +538,7 @@ mod tests {
         let h = ProviderHealth::with_home(dir.clone());
         let ep = h.endpoint_for("hermes").expect("endpoint sniffed");
         assert_eq!(ep.port, 8001);
-        let _ = std::fs::remove_dir_all(dir.parent().unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -539,7 +553,7 @@ mod tests {
     fn endpoint_follows_config_changes_without_invalidate() {
         // with_home() sets sniff_ttl = 0, so every call re-sniffs: a session
         // switching providers mid-flight must move the probe target.
-        let dir = std::env::temp_dir().join(format!("ho-prov-resniff-{}", std::process::id()));
+        let dir = prov_test_dir("resniff");
         let cfg = dir.join(".hermes");
         std::fs::create_dir_all(&cfg).unwrap();
         let path = cfg.join("config.yaml");
@@ -560,7 +574,7 @@ mod tests {
             8010,
             "stale cached endpoint must be refreshed"
         );
-        let _ = std::fs::remove_dir_all(dir.parent().unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -576,13 +590,13 @@ mod tests {
         if !which.status.success() {
             return;
         }
-        let dir = std::env::temp_dir().join(format!("ho-prov-sqlite-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = prov_test_dir("sqlite");
         let db = dir.join("state.db");
         let setup = Command::new("sqlite3")
             .arg(&db)
             .arg(
-                "CREATE TABLE sessions (billing_base_url TEXT, last_activity_at REAL);\
+                "DROP TABLE IF EXISTS sessions;\
+                 CREATE TABLE sessions (billing_base_url TEXT, last_activity_at REAL);\
                  INSERT INTO sessions VALUES ('http://127.0.0.1:8001/v1', 100.0);\
                  INSERT INTO sessions VALUES ('', 200.0);\
                  INSERT INTO sessions VALUES ('https://opencode.ai/zen/v1', 300.0);",
@@ -623,17 +637,104 @@ mod tests {
 
     fn gate_dir(prefix: &str) -> PathBuf {
         let n = GATE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("ho-prov-{prefix}-{}-{n}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "ho-prov-{prefix}-{}-{n}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
         std::fs::create_dir_all(dir.join(".hermes")).unwrap();
         dir
     }
 
-    /// A loopback port with nothing listening (bind then drop).
-    fn closed_port() -> u16 {
+    /// A reserved loopback port that refuses connections.
+    ///
+    /// The socket is bound but never put into the listening state, so any
+    /// connect gets ECONNREFUSED while the reservation is held. A bare
+    /// `bind → drop → port` was racy under parallel test execution: another
+    /// test could re-bind the freed port between the drop and the probe,
+    /// which made `send_gate_fresh_probes_ambient_default` flake under
+    /// `cargo test --workspace`.
+    struct ClosedPort {
+        port: u16,
+        // Keeps the bound (non-listening) socket alive so no other test or
+        // process can bind the port while this guard is in scope.
+        #[cfg(unix)]
+        _reservation: std::os::unix::io::OwnedFd,
+    }
+
+    impl ClosedPort {
+        fn port(&self) -> u16 {
+            self.port
+        }
+    }
+
+    /// Reserves a loopback port with a bound-but-not-listening TCP socket.
+    /// Per `bind(2)` semantics, incoming connects to a socket that was never
+    /// `listen(2)`-ed are refused (RST) — exactly what these tests need.
+    #[cfg(unix)]
+    fn closed_port() -> ClosedPort {
+        use std::os::fd::{FromRawFd, OwnedFd};
+        // SAFETY: a fresh kernel socket fd; ownership moves to OwnedFd below,
+        // which closes it on drop.
+        let fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0) };
+        assert!(
+            fd >= 0,
+            "socket() failed: {}",
+            std::io::Error::last_os_error()
+        );
+        let mut addr: libc::sockaddr_in = unsafe { std::mem::zeroed() };
+        addr.sin_family = libc::AF_INET as libc::sa_family_t;
+        // s_addr is stored in network byte order; `.to_be()` writes
+        // 127.0.0.1 as the bytes 7F 00 00 01 on any endianness.
+        addr.sin_addr.s_addr = libc::INADDR_LOOPBACK.to_be();
+        addr.sin_port = 0; // kernel picks an ephemeral port
+                           // SAFETY: `addr` is a fully initialized sockaddr_in and `fd` a valid
+                           // socket; the kernel copies the address — no aliasing.
+        let rc = unsafe {
+            libc::bind(
+                fd,
+                &addr as *const libc::sockaddr_in as *const libc::sockaddr,
+                std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
+            )
+        };
+        assert_eq!(rc, 0, "bind() failed: {}", std::io::Error::last_os_error());
+        // Read back the port the kernel assigned.
+        let mut len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+        // SAFETY: getsockname writes one sockaddr_in (length checked by the
+        // kernel against `len`).
+        let rc = unsafe {
+            libc::getsockname(
+                fd,
+                &mut addr as *mut libc::sockaddr_in as *mut libc::sockaddr,
+                &mut len,
+            )
+        };
+        assert_eq!(
+            rc,
+            0,
+            "getsockname() failed: {}",
+            std::io::Error::last_os_error()
+        );
+        // sin_port is stored in network byte order; from_be recovers the
+        // numeric port regardless of host endianness.
+        let port = u16::from_be(addr.sin_port);
+        // SAFETY: `fd` was created by this function and is not used anywhere
+        // else — OwnedFd now owns and closes it.
+        let reservation = unsafe { OwnedFd::from_raw_fd(fd) };
+        ClosedPort {
+            port,
+            _reservation: reservation,
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn closed_port() -> ClosedPort {
+        // No raw-socket reservation off Unix; bind+drop is racy under
+        // parallel tests, acceptable outside the tested mac/linux matrix.
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let p = l.local_addr().unwrap().port();
-        drop(l);
-        p
+        ClosedPort {
+            port: l.local_addr().unwrap().port(),
+        }
     }
 
     fn write_ambient(dir: &std::path::Path, port: u16) {
@@ -647,8 +748,11 @@ mod tests {
     #[test]
     fn send_gate_fresh_probes_ambient_default() {
         // Dead ambient default → refuse fast with a fresh-specific reason.
+        // The guard keeps the refusing port reserved for the whole test — a
+        // freed port could be re-bound by a concurrent test before the probe.
         let dir = gate_dir("fresh-down");
-        write_ambient(&dir, closed_port());
+        let closed = closed_port();
+        write_ambient(&dir, closed.port());
         let h = ProviderHealth::with_home(dir.clone());
         let reason = h.send_readiness("hermes", None).expect("must refuse");
         assert!(reason.contains("default provider down"), "{reason}");
@@ -678,7 +782,10 @@ mod tests {
         }
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let up = listener.local_addr().unwrap().port();
-        let down = closed_port();
+        // Guard stays in scope until the assertions below are done so the
+        // refusing port cannot be re-bound by a concurrent test.
+        let _down_guard = closed_port();
+        let down = _down_guard.port();
         // Ambient points at the DOWN port: fresh sends refuse, but a resume
         // into the session on the UP endpoint must pass (and vice versa) —
         // the gate follows the send, not the freshest session.

@@ -1908,15 +1908,66 @@ mod tests {
         );
     }
 
-    /// Serializes tests that mutate the global `PATH` env var.
+    /// Serializes tests that mutate process-global env vars (PATH, HOME,
+    /// FAKE_TMUX_SINK). Only tests that MUTATE the environment take this
+    /// lock; everything else runs freely in parallel.
+    ///
+    /// Acquired poison-tolerant on purpose: a panic inside a holder must not
+    /// fail every later env-dependent test. The real hazard a panic leaves
+    /// behind is the MUTATED environment, and that is handled by [`EnvGuard`]
+    /// (restore-on-Drop runs during unwinding).
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Acquires [`ENV_LOCK`], tolerating poison (see the lock's doc).
+    fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Captures process-global env vars and restores them on Drop.
+    ///
+    /// Env-mutating tests must hold a guard so the original values come back
+    /// even when the test PANICS mid-body (Drop runs during unwinding). The
+    /// old restore-at-the-end pattern leaked a mutated environment on panic:
+    /// the next env-dependent test then failed (e.g. PATH pointing at a
+    /// deleted temp dir, HOME at a removed home), panicked in turn, and the
+    /// cascade spread PoisonErrors to every serialized test.
+    struct EnvGuard {
+        path: Option<std::ffi::OsString>,
+        home: Option<std::ffi::OsString>,
+        fake_tmux_sink: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn capture() -> Self {
+            Self {
+                path: std::env::var_os("PATH"),
+                home: std::env::var_os("HOME"),
+                fake_tmux_sink: std::env::var_os("FAKE_TMUX_SINK"),
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            let restore = |key: &str, val: &Option<std::ffi::OsString>| match val {
+                Some(v) => std::env::set_var(key, v),
+                None => std::env::remove_var(key),
+            };
+            restore("PATH", &self.path);
+            restore("HOME", &self.home);
+            restore("FAKE_TMUX_SINK", &self.fake_tmux_sink);
+        }
+    }
 
     #[test]
     fn cli_list_program_resolves_bare_names_outside_restricted_path() {
         // The GUI-launched daemon inherits a restricted PATH — a bare
         // `hermes` in `~/.local/bin` must still resolve (this is the bug that
         // made every chat message a fresh send instead of resuming).
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _lock = lock_env();
+        let _env = EnvGuard::capture();
         let dir = std::env::temp_dir().join(format!("ho-resolve-{}", uuid::Uuid::new_v4()));
         let bindir = dir.join("bin");
         std::fs::create_dir_all(&bindir).unwrap();
@@ -1928,7 +1979,6 @@ mod tests {
             std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
 
-        let old_path = std::env::var_os("PATH");
         std::env::set_var("PATH", "/usr/bin:/bin"); // Finder-like restricted PATH
                                                     // Found via PATH (temp dir added to PATH).
         std::env::set_var("PATH", format!("/usr/bin:/bin:{}", bindir.display()));
@@ -1949,10 +1999,6 @@ mod tests {
         std::env::set_var("PATH", format!("/usr/bin:/bin:{}", bindir.display()));
         assert_eq!(resolve_cli_program("noexec"), "noexec");
 
-        match old_path {
-            Some(p) => std::env::set_var("PATH", p),
-            None => std::env::remove_var("PATH"),
-        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1961,7 +2007,8 @@ mod tests {
         // End-to-end: a cli-list agent configured with a bare program name is
         // discovered even when the daemon's PATH cannot see it (the binary
         // lives in ~/.local/bin via the hardcoded fallback dirs).
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _lock = lock_env();
+        let _env = EnvGuard::capture();
         let home = std::env::temp_dir().join(format!("ho-home-{}", uuid::Uuid::new_v4()));
         let bindir = home.join(".local").join("bin");
         std::fs::create_dir_all(&bindir).unwrap();
@@ -1978,8 +2025,6 @@ mod tests {
             std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
 
-        let old_home = std::env::var_os("HOME");
-        let old_path = std::env::var_os("PATH");
         std::env::set_var("HOME", &home);
         std::env::set_var("PATH", "/usr/bin:/bin"); // Finder-like: cannot see ~/.local/bin
         let mut config = Config::default_config();
@@ -2011,14 +2056,11 @@ mod tests {
         );
         assert_eq!(sessions[0].session_id, sid);
 
-        match old_home {
-            Some(h) => std::env::set_var("HOME", h),
-            None => std::env::remove_var("HOME"),
-        }
-        match old_path {
-            Some(p) => std::env::set_var("PATH", p),
-            None => std::env::remove_var("PATH"),
-        }
+        // Restore HOME/PATH BEFORE deleting the temp home: other tests run
+        // concurrently (they do not take the env lock) and a demo-agent send
+        // resolving `~/.handover/demo-handoff.txt` against a directory that
+        // is being removed would fail its handoff.
+        drop(_env);
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -2186,7 +2228,9 @@ mod tests {
     /// appends its key argument to the file named by $FAKE_TMUX_SINK — tests
     /// point that at the transcript so verify-after sees "resumption".
     ///
-    /// Mutates global `PATH` — callers must hold [`ENV_LOCK`].
+    /// Mutates global `PATH` + `FAKE_TMUX_SINK` — callers must hold the env
+    /// lock (`lock_env`) and keep an [`EnvGuard`] so both are restored when
+    /// the test ends (or panics).
     fn install_fake_tmux(bindir: &std::path::Path, sink: &std::path::Path) {
         std::fs::create_dir_all(bindir).unwrap();
         let tmux = bindir.join("tmux");
@@ -2209,7 +2253,8 @@ mod tests {
     fn approve_session_verifies_when_transcript_resumes() {
         // The tmux injection appends the approve keystroke into the
         // transcript: the marker disappears, verify-after confirms.
-        let _env = ENV_LOCK.lock().unwrap();
+        let _lock = lock_env();
+        let _env = EnvGuard::capture(); // install_fake_tmux mutates PATH/FAKE_TMUX_SINK
         let home = std::env::temp_dir().join(format!("ho-appr-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
         let glob = format!("{}/*/*.jsonl", home.display());
@@ -2253,7 +2298,8 @@ mod tests {
     fn approve_session_fails_soft_when_transcript_does_not_move() {
         // Injection "succeeds" (the fake tmux appends to a dummy sink) but the
         // real transcript never changes → verified=false, never false success.
-        let _env = ENV_LOCK.lock().unwrap();
+        let _lock = lock_env();
+        let _env = EnvGuard::capture(); // install_fake_tmux mutates PATH/FAKE_TMUX_SINK
         let home = std::env::temp_dir().join(format!("ho-appr-soft-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
         let glob = format!("{}/*/*.jsonl", home.display());
@@ -2373,6 +2419,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    /// Polls [`agent_process_running`] until it sees the probe or the budget
+    /// expires. `Command::spawn` returns before the child's exec completes, so
+    /// a single check right after `spawn()` can race the exec (the process
+    /// still carries its parent's image name) and read false under load.
+    fn wait_until_running(probe: &str) -> bool {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if agent_process_running(probe) {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+    }
+
     #[test]
     fn process_running_reflects_live_processes() {
         // A program that is not running reports false.
@@ -2414,7 +2477,7 @@ mod tests {
                 .spawn()
                 .expect("spawn probe");
             assert!(
-                agent_process_running(&probe.to_string_lossy()),
+                wait_until_running(&probe.to_string_lossy()),
                 "a live child process must be seen as running"
             );
             // Kill the child, then it must read as not running.
@@ -2465,13 +2528,22 @@ mod tests {
                 approval_target: None,
             });
             let daemon = test_daemon(config);
-            let statuses = daemon.agents_status();
-            let s = statuses
-                .iter()
-                .find(|s| s.meta.id == "probe")
-                .expect("agent present");
-            assert!(s.status.available, "{}", s.status.detail);
-            assert!(s.status.running, "live child must read as online");
+            // Poll: spawn() returns before exec completes — a single status
+            // read can race the exec and miss the running process.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            let (available, running) = loop {
+                let statuses = daemon.agents_status();
+                let s = statuses
+                    .iter()
+                    .find(|s| s.meta.id == "probe")
+                    .expect("agent present");
+                if s.status.running || std::time::Instant::now() >= deadline {
+                    break (s.status.available, s.status.running);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            };
+            assert!(available, "probe agent must be available");
+            assert!(running, "live child must read as online");
             let mut waiter = child;
             waiter.kill().expect("kill probe");
             waiter.wait().expect("probe reaped");

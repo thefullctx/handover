@@ -353,13 +353,37 @@ mod tests {
         assert!(build_approval_command(&ApprovalChannel::Agent, "x", true).is_err());
     }
 
+    /// Writes the transcript and pins its mtime to an explicit value, which
+    /// the caller uses as the verification baseline.
+    ///
+    /// Pinning the timestamp is deliberate: after `fs::write` returns, the OS
+    /// may still flush the attribute update asynchronously (deferred mtime),
+    /// so a baseline captured right after the write can be OLDER than what a
+    /// later `metadata()` sees — which made `verify_session_resumed` report a
+    /// spurious "resumed" and flaked `verify_times_out_fail_soft` under load.
+    fn write_pinned_transcript(
+        dir: &std::path::Path,
+        name: &str,
+    ) -> (std::path::PathBuf, SystemTime) {
+        let path = dir.join(name);
+        std::fs::write(&path, "[permission] approve?\n").unwrap();
+        let pinned = SystemTime::now();
+        let file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.set_times(
+            std::fs::FileTimes::new()
+                .set_modified(pinned)
+                .set_accessed(pinned),
+        )
+        .expect("pin mtime");
+        drop(file);
+        (path, pinned)
+    }
+
     #[test]
     fn verify_sees_mtime_advance() {
         let dir = std::env::temp_dir().join(format!("ho-verify-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("t.jsonl");
-        std::fs::write(&path, "[permission] approve?\n").unwrap();
-        let baseline = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let (path, baseline) = write_pinned_transcript(&dir, "t.jsonl");
 
         // Simulate the agent resuming: append to the transcript.
         std::thread::spawn({
@@ -388,9 +412,7 @@ mod tests {
     fn verify_times_out_fail_soft() {
         let dir = std::env::temp_dir().join(format!("ho-verify-t-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("t.jsonl");
-        std::fs::write(&path, "[permission] approve?\n").unwrap();
-        let baseline = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let (path, baseline) = write_pinned_transcript(&dir, "t.jsonl");
 
         let start = Instant::now();
         assert!(!verify_session_resumed(

@@ -101,6 +101,14 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn osascript_accepts_generated_notification_script() {
+        // Runs REAL osascript: requires an interactive GUI session where the
+        // process may send Apple events. Headless/CI sessions and transient
+        // notification-center contention make it error intermittently, which
+        // would flake the deterministic suite — opt in explicitly.
+        if std::env::var("HANDOVER_TEST_OSASCRIPT").is_err() {
+            eprintln!("skipping: set HANDOVER_TEST_OSASCRIPT=1 to run the live osascript check");
+            return;
+        }
         let script = format!(
             "display notification {} with title {}",
             applescript_string("Handover test body"),
