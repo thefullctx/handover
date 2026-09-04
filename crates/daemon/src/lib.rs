@@ -2078,6 +2078,73 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_burst_never_hangs_or_exhausts_threads() {
+        // Regression for the in-flight request cap: an unauthenticated burst
+        // (a webpage firing loopback GETs at 127.0.0.1, say) must never grow
+        // threads without bound or stall the daemon. Every response is a
+        // prompt 200 or the bounded 503 — never a hang.
+        use std::io::{Read, Write};
+        use std::net::TcpStream;
+
+        fn raw_request(
+            port: u16,
+            method: &str,
+            path: &str,
+            body: Option<&str>,
+            token: Option<&str>,
+        ) -> String {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let body_str = body.unwrap_or("");
+            let auth = token
+                .map(|t| format!("Authorization: Bearer {t}\r\n"))
+                .unwrap_or_default();
+            let req = format!(
+                "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body_str}",
+                body_str.len()
+            );
+            stream.write_all(req.as_bytes()).unwrap();
+            let mut buf = String::new();
+            stream.read_to_string(&mut buf).unwrap();
+            buf
+        }
+
+        let daemon = test_daemon(Config::default_config());
+        let token = daemon.api_token.clone();
+        let shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let handle = api::serve(shared(daemon), 0, Arc::clone(&shutdown)).unwrap();
+        let port = handle.port;
+
+        // 48 concurrent hits on the (unauthenticated) /agents status route,
+        // which spawns per-agent pgrep/ps + provider probes per call.
+        let workers: Vec<_> = (0..48)
+            .map(|_| {
+                let token = token.clone();
+                std::thread::spawn(move || raw_request(port, "GET", "/agents", None, Some(&token)))
+            })
+            .collect();
+        let start = std::time::Instant::now();
+        for w in workers {
+            let resp = w.join().unwrap();
+            assert!(
+                resp.contains("200 OK") || resp.contains("503"),
+                "unexpected status in burst response: {resp}"
+            );
+        }
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(20),
+            "burst must drain quickly, took {:?}",
+            start.elapsed()
+        );
+
+        // The daemon is still alive and serving after the burst.
+        let health = raw_request(port, "GET", "/health", None, None);
+        assert!(health.contains("\"ok\":true"), "health: {health}");
+
+        let _ = raw_request(port, "POST", "/quit", Some("{}"), Some(&token));
+        shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[test]
     fn sessions_endpoint_requires_auth_and_lists_live() {
         use std::io::{Read, Write};
         use std::net::TcpStream;

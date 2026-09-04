@@ -364,7 +364,12 @@ fn toml_section_value<'a>(text: &'a str, section: &str, key: &str) -> Option<&'a
 ///
 /// DNS runs outside the connect timeout, so loopback names fast-path to
 /// 127.0.0.1/::1 without touching the resolver (status polls must never stall
-/// on DNS).
+/// on DNS). KNOWN TRADEOFF: a NON-loopback hostname (e.g. a cloud endpoint
+/// such as `api.openai.com` recorded in a Hermes session) resolves through
+/// the system resolver, which std does not expose a timeout for — a slow
+/// resolver can stretch one probe past the nominal ~700 ms. That only ever
+/// slows a status poll / send gate; the verdict is still fail-soft (never
+/// wrong), and the 10 s verdict cache bounds how often it can happen.
 fn tcp_connectable(host: &str, port: u16) -> bool {
     use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
     // Fast-path loopback: no DNS, straight to connect_timeout.

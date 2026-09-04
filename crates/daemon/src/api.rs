@@ -4,7 +4,7 @@
 //! Mutating routes require a local bearer token (see `Config::api_token_path`).
 //! `/health` stays open so process managers can probe liveness without secrets.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use handover_core::capture::Capture;
@@ -13,8 +13,27 @@ use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
 use crate::SharedDaemon;
 
+/// Hard ceiling on concurrently in-flight request threads.
+///
+/// One thread per request keeps a slow `/send` from ever blocking `/health`,
+/// but it must stay bounded: `/agents` (unauthenticated) spawns `pgrep`/`ps`
+/// and provider probes per call, and a misbehaving local client — or a
+/// webpage firing loopback GETs — could otherwise grow threads without
+/// limit. Overflow is answered with an immediate 503 instead of queuing.
+const MAX_INFLIGHT_REQUESTS: usize = 16;
+
 pub struct HttpHandle {
     pub port: u16,
+}
+
+/// Decrements the in-flight counter when a request thread finishes (or
+/// panics — Drop runs during unwinding).
+struct InflightGuard(Arc<AtomicUsize>);
+
+impl Drop for InflightGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 /// Starts serving the HTTP API on a background thread. If the port is taken
@@ -35,16 +54,36 @@ pub fn serve(
         .map(|a| a.port())
         .unwrap_or(port);
 
+    let inflight = Arc::new(AtomicUsize::new(0));
     std::thread::spawn(move || {
         for request in server.incoming_requests() {
             if shutdown.load(Ordering::Relaxed) {
                 break;
             }
-            // One thread per request so a slow `/send` (an agent can run for
-            // minutes) never blocks `/health`, `/status` or a capture.
+            // Bound concurrent request threads (see MAX_INFLIGHT_REQUESTS):
+            // a burst beyond the cap is answered 503 immediately, never
+            // queued. One thread per request means a slow `/send` (an agent
+            // can run for minutes) never blocks `/health`, `/status` or a
+            // capture.
+            if inflight.fetch_add(1, Ordering::Relaxed) >= MAX_INFLIGHT_REQUESTS {
+                inflight.fetch_sub(1, Ordering::Relaxed);
+                respond(
+                    request,
+                    Err((
+                        503,
+                        format!(
+                            "Handover is busy ({} requests in flight). Try again in a moment.",
+                            MAX_INFLIGHT_REQUESTS
+                        ),
+                    )),
+                );
+                continue;
+            }
             let request_daemon = daemon.clone();
             let request_shutdown = Arc::clone(&shutdown);
+            let guard = InflightGuard(Arc::clone(&inflight));
             std::thread::spawn(move || {
+                let _guard = guard;
                 handle_request(request, request_daemon, request_shutdown);
             });
         }

@@ -37,6 +37,11 @@ The target is 2–3 keystrokes from seeing a problem to a successful handoff.
 
 Everything runs locally. Nothing is uploaded anywhere unless the agent you choose does so.
 
+**Supported platforms:** Handover is developed and verified on **macOS** and
+**Linux**. Windows paths are reserved in the config layout for future support,
+but the desktop app (tray, hotkey, status lights) is not yet supported there —
+the live-process check and approval injection are Unix-specific.
+
 ## Installation
 
 ### Prerequisites
@@ -455,7 +460,7 @@ Implemented and verified end-to-end:
   `session_id` on every message), messages delivered verbatim (no action preamble — the
   exact text you type is exactly what the agent receives), inline streaming + per-turn
   "Prompt that was sent" transparency
-- ✅ 177 Rust unit tests + 62 Vitest/Testing Library tests covering the keyboard-first flows
+- ✅ 180 Rust unit tests + 62 Vitest/Testing Library tests covering the keyboard-first flows
   and the session/approval/chat layers; `cargo clippy --workspace --all-targets` is
   warning-free
 - ✅ Production Content Security Policy (never disabled); prompt temp-cache dir overridable with `HANDOVER_PROMPT_CACHE_DIR` for sandboxed CI
