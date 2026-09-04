@@ -265,7 +265,10 @@ menu on each card holds Make default, Detect session, View command (commands
 are hidden by default), and Remove. The built-in demo agent sits muted at the
 bottom of the list.
 
-You can do the same by editing the config file (example above) and relaunching the app. The
+You can do the same by editing the config file (example above) and relaunching the app. If an
+`[[agents]]` block fails validation (e.g. a `resume_command` without `{SESSION}`, or both
+`session_glob` and `session_cli_list` set), Handover skips that agent and logs a warning —
+the rest of the config still loads. The
 first enabled agent is the default. The built-in `demo` agent only echoes handoffs into a
 private file (`~/.handover/demo-handoff.txt`) — it exists so the loop can be verified
 end-to-end without a real agent; once you add your own, it stops being the default.
