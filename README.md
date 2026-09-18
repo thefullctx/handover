@@ -460,7 +460,7 @@ Implemented and verified end-to-end:
   `session_id` on every message), messages delivered verbatim (no action preamble — the
   exact text you type is exactly what the agent receives), inline streaming + per-turn
   "Prompt that was sent" transparency
-- ✅ 180 Rust unit tests + 62 Vitest/Testing Library tests covering the keyboard-first flows
+- ✅ 191 Rust unit tests + 62 Vitest/Testing Library tests covering the keyboard-first flows
   and the session/approval/chat layers; `cargo clippy --workspace --all-targets` is
   warning-free
 - ✅ Production Content Security Policy (never disabled); prompt temp-cache dir overridable with `HANDOVER_PROMPT_CACHE_DIR` for sandboxed CI
