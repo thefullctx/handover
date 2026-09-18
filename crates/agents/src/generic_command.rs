@@ -569,22 +569,151 @@ fn shlex_split(s: &str) -> Vec<String> {
 /// `sh -c` / `env` and taking the first word of a shell string.
 /// Public so the daemon can reuse the same extraction for its live-process
 /// status check (`agent_process_running`).
+///
+/// Shell-string prefixes are skipped so `detect()` and the status light see
+/// the AGENT, not shell machinery: leading variable assignments (`FOO=1 hermes`),
+/// `export`/`unset` statements (`export FOO=1; hermes`), and `cd` commands
+/// (`cd ~/proj && hermes`) all resolve to `hermes`. When a separator is
+/// involved, the LAST segment wins (what actually runs the agent).
+///
+/// KNOWN LIMIT: the scan is syntactic, not a shell simulator. A program token
+/// that is actually a quoted *string argument* is still treated as a program
+/// (`printf "hermes"` reads as `hermes`). Commands that fancy are rare as
+/// agent launchers, and the failure mode is only a wrong status light /
+/// availability probe — never a wrong command execution (send always runs the
+/// configured command verbatim under `sh -c`).
 pub fn first_program(command: &str) -> Option<String> {
-    let tokens = shlex_split(command);
-    let mut i = 0;
-    while i < tokens.len() {
-        let is_wrapper = matches!(tokens[i].as_str(), "sh" | "bash" | "zsh" | "env")
-            && i + 1 < tokens.len()
-            && tokens[i + 1] == "-c";
-        if is_wrapper {
-            i += 2;
-        } else {
+    let mut current = command;
+    let mut result: Option<String> = None;
+    // Walk statement-by-statement across unquoted `;`, `&&`, `||`, `|`, `&`
+    // and newlines. Each segment that looks like it launches something
+    // updates `result`; the loop ends on the last one (shell semantics: the
+    // final command's status is the string's). Separators inside quotes are
+    // literal text — `hermes -z "do a && do b"` is one command, not two.
+    loop {
+        let (cut, sep_len) = find_unquoted_separator(current).unwrap_or((current.len(), 0));
+        let segment = &current[..cut];
+        if let Some(program) = first_program_in_segment(segment) {
+            result = Some(program);
+        }
+        if cut >= current.len() {
             break;
+        }
+        current = &current[cut + sep_len..];
+    }
+    result
+}
+
+/// Byte index and length of the first shell separator that is OUTSIDE single
+/// or double quotes (`;`, `&&`, `&`, `||`, `|`, newline). Quotes and
+/// backslash-escapes are tracked so a separator inside a quoted argument
+/// (`--prompt "a && b"`) is never mistaken for a command boundary.
+fn find_unquoted_separator(s: &str) -> Option<(usize, usize)> {
+    let bytes = s.as_bytes();
+    let mut single = false;
+    let mut double = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\'' if !double => single = !single,
+            b'"' if !single => double = !double,
+            b'\\' if !single => i += 1, // skip the escaped character
+            b';' | b'\n' if !single && !double => return Some((i, 1)),
+            b'&' | b'|' if !single && !double => {
+                let doubled = bytes.get(i + 1) == Some(&bytes[i]);
+                return Some((i, if doubled { 2 } else { 1 }));
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// First program of ONE statement (no separators): strips leading variable
+/// assignments and `export`/`unset`/`exec`/`cd`/wrapper prefixes, then takes
+/// the first token of what remains.
+fn first_program_in_segment(segment: &str) -> Option<String> {
+    let tokens = shlex_split(segment);
+    let mut i = 0;
+    // Leading VAR=value assignments: `FOO=1 hermes`, `A=1 B=2 hermes`.
+    while i < tokens.len() && is_leading_assignment(&tokens[i]) {
+        i += 1;
+    }
+    // `export FOO=1; hermes` / `unset FOO; hermes`: the statement launches
+    // nothing — skip it and any assignments that follow in the same one.
+    if matches!(tokens.get(i).map(String::as_str), Some("export") | Some("unset")) {
+        i += 1;
+        while i < tokens.len() && is_leading_assignment(&tokens[i]) {
+            i += 1;
+        }
+    }
+    // `cd dir` never launches the agent (its argument is a directory);
+    // only a later `&&`/`;` segment can contain the program.
+    if matches!(tokens.get(i).map(String::as_str), Some("cd")) {
+        return None;
+    }
+    // `exec hermes …` runs hermes in the same process — transparent.
+    if matches!(tokens.get(i).map(String::as_str), Some("exec")) {
+        i += 1;
+        while i < tokens.len() && is_leading_assignment(&tokens[i]) {
+            i += 1;
+        }
+    }
+    // `sh -c` / `bash -c` / `zsh -c` / `env` wrappers: recurse into the
+    // wrapper's argument (for -c) or skip past the assignments (for env).
+    let is_wrapper = matches!(
+        tokens.get(i).map(String::as_str),
+        Some("sh") | Some("bash") | Some("zsh") | Some("env")
+    );
+    if is_wrapper {
+        // Skip wrapper flags (`env -i`, `sh -l -c`, ...) to find the target —
+        // but stop ON `-c` (it consumes the next token as the shell string).
+        let mut j = i + 1;
+        while j < tokens.len() && tokens[j].starts_with('-') && tokens[j] != "-c" {
+            j += 1;
+        }
+        match tokens.get(j).map(String::as_str) {
+            Some("-c") => {
+                // Recurse into the shell string: handles nesting like
+                // `sh -c 'sh -c "hermes …"'` and `sh -c 'env FOO=1 hermes'`.
+                if let Some(inner) = tokens.get(j + 1) {
+                    return first_program(inner);
+                }
+            }
+            Some(_) => {
+                // `env VAR=1 hermes …`: skip the env assignments, take the
+                // program (first non-assignment after `env`).
+                let mut k = j;
+                while k < tokens.len() && is_leading_assignment(&tokens[k]) {
+                    k += 1;
+                }
+                return tokens
+                    .get(k)
+                    .map(|t| t.split_whitespace().next().unwrap_or("").to_string());
+            }
+            None => return None,
         }
     }
     tokens
         .get(i)
         .map(|t| t.split_whitespace().next().unwrap_or("").to_string())
+}
+
+/// `FOO=1`, `FOO=`, `FOO="a b"` (post-shlex) — but not a bare word, a path
+/// with an equals inside a name that has no `=` before the first `/`, or a
+/// single `-` flag.
+fn is_leading_assignment(token: &str) -> bool {
+    if token.starts_with('-') {
+        return false;
+    }
+    match token.split_once('=') {
+        Some((name, _)) => {
+            !name.is_empty()
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        }
+        None => false,
+    }
 }
 
 fn program_exists(program: &str) -> Option<PathBuf> {
@@ -664,6 +793,114 @@ mod tests {
         let agent = agent_with("sh -c 'tee /tmp/x'", None);
         let status: AgentStatus = agent.detect().unwrap();
         assert!(status.available, "tee should be found: {}", status.detail);
+    }
+
+    // -- first_program: shell-string prefixes (regression: bug where
+    //    `export FOO=1; hermes …` resolved to `export` and reported the
+    //    agent available regardless of whether its binary existed) --------
+
+    #[test]
+    fn first_program_sees_through_leading_assignment() {
+        assert_eq!(
+            first_program("FOO=1 hermes -z \"{PROMPT}\"").as_deref(),
+            Some("hermes")
+        );
+        assert_eq!(
+            first_program("A=1 B=2 HANDOVER_X=y omp -p \"{PROMPT}\"").as_deref(),
+            Some("omp")
+        );
+    }
+
+    #[test]
+    fn first_program_sees_through_export_statement() {
+        assert_eq!(
+            first_program("export FOO=1; hermes -z \"{PROMPT}\"").as_deref(),
+            Some("hermes")
+        );
+        assert_eq!(
+            first_program("export A=1 B=2 && codex exec \"{PROMPT}\"").as_deref(),
+            Some("codex")
+        );
+        // The last launching segment wins (shell semantics).
+        assert_eq!(
+            first_program("hermes -z 'x'; codex exec \"y\"").as_deref(),
+            Some("codex")
+        );
+    }
+
+    #[test]
+    fn first_program_sees_through_cd_and_exec() {
+        assert_eq!(
+            first_program("cd ~/proj && hermes -z \"{PROMPT}\"").as_deref(),
+            Some("hermes")
+        );
+        assert_eq!(first_program("cd /tmp").as_deref(), None);
+        assert_eq!(
+            first_program("exec env HOME=/x hermes -z \"p\"").as_deref(),
+            Some("hermes")
+        );
+    }
+
+    #[test]
+    fn first_program_sees_through_env_wrapper() {
+        // `env` WITHOUT -c: skip assignments after it.
+        assert_eq!(
+            first_program("env FOO=1 hermes -z \"{PROMPT}\"").as_deref(),
+            Some("hermes")
+        );
+        // Bare `env` alone is not a program — fail closed so neither detect()
+        // nor the status light pgreps shell machinery.
+        assert_eq!(first_program("env").as_deref(), None);
+    }
+
+    #[test]
+    fn first_program_ignores_separators_inside_quotes() {
+        // The `&&` is prompt TEXT, not a command boundary.
+        assert_eq!(
+            first_program("hermes -z \"do a && do b; then c\"").as_deref(),
+            Some("hermes")
+        );
+        assert_eq!(
+            first_program("sh -c 'printf \"x; y\"'").as_deref(),
+            Some("printf")
+        );
+    }
+
+    #[test]
+    fn first_program_handles_pipes_and_newlines() {
+        assert_eq!(
+            first_program("echo hi | tee log; hermes -z \"{PROMPT}\"").as_deref(),
+            Some("hermes")
+        );
+        assert_eq!(
+            first_program("export A=1\nhermes -z \"{PROMPT}\"").as_deref(),
+            Some("hermes")
+        );
+    }
+
+    #[test]
+    fn first_program_still_handles_plain_commands() {
+        assert_eq!(first_program("hermes").as_deref(), Some("hermes"));
+        assert_eq!(
+            first_program("/usr/local/bin/hermes -z \"{PROMPT}\"").as_deref(),
+            Some("/usr/local/bin/hermes")
+        );
+        assert_eq!(
+            first_program("sh -c 'tee /tmp/x'").as_deref(),
+            Some("tee")
+        );
+        assert_eq!(first_program("").as_deref(), None);
+    }
+
+    #[test]
+    fn detect_unavailable_when_only_shell_machinery_parses() {
+        // Regression: `export FOO=1; <missing-binary> …` used to read as
+        // `export` (always present) → wrongly "available". The export is now
+        // skipped and the missing binary is what gets probed.
+        let agent = agent_with("export FOO=1; definitely-not-a-real-agent-xyz -z \"{PROMPT}\"", None);
+        let status: AgentStatus = agent.detect().unwrap();
+        assert!(!status.available, "{}", status.detail);
+        assert!(status.detail.contains("definitely-not-a-real-agent-xyz"));
     }
 
     #[test]

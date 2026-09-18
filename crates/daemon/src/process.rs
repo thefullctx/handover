@@ -23,9 +23,14 @@ pub(crate) fn agent_process_running(command: &str) -> bool {
         || matches!(
             basename.as_str(),
             "sh" | "bash" | "zsh" | "python" | "python3"
+                // Shell machinery that can only appear when the program
+                // extraction failed to see through a wrapper/statement —
+                // pgrepping these lights agents green for unrelated system
+                // processes (`env` runs everywhere in shell scripts).
+                | "env" | "export" | "unset" | "exec" | "cd" | "true" | "false"
         )
     {
-        // A shell/interpreter alone is not the agent itself.
+        // A shell/interpreter/wrapper alone is not the agent itself.
         return false;
     }
     let probe = |extra: &[&str]| {

@@ -449,34 +449,39 @@ fn rebuild_tray_menu(app: &AppHandle) {
 #[tauri::command]
 async fn palette_payload(state: tauri::State<'_, SharedDaemon>) -> Result<PalettePayload, String> {
     // Cheap half under one brief lock: registry detection (no subprocesses),
-    // config reads, snapshots. The probe half — live-process checks,
-    // provider-health probes, glob walks, cli-list subprocesses — runs off
-    // the lock so a slow agent never delays a palette open.
-    let (agents_snapshot, sessions_snapshot, payload) = {
-        let daemon = state
-            .0
-            .lock()
-            .map_err(|_| "daemon lock poisoned".to_string())?;
-        (
-            daemon.agents_status_snapshot(),
-            daemon.live_sessions_snapshot(),
-            PalettePayload {
-                actions: builtin_actions(),
-                agents: Vec::new(),
-                preferences: daemon.config.preferences.clone(),
-                quick_send: daemon.config.general.quick_send,
-                default_agent_id: daemon.registry.default_id(),
-                config_path: daemon.config_path.display().to_string(),
-                shortcut: daemon.config.general.shortcut.clone(),
-                sessions: Vec::new(),
-            },
-        )
-    };
-    Ok(PalettePayload {
-        agents: compute_agents_status(agents_snapshot),
-        sessions: compute_live_sessions(&sessions_snapshot),
-        ..payload
+    // config reads, snapshots. The probe half — live-process checks (pgrep/ps
+    // subprocesses), provider-health probes, glob walks, cli-list subprocesses
+    // — runs in spawn_blocking so a slow agent (a hung cli-list has a 5s
+    // budget) can never block a tokio worker thread and delay palette opens.
+    let daemon = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (agents_snapshot, sessions_snapshot, payload) = {
+            let daemon = daemon
+                .lock()
+                .map_err(|_| "daemon lock poisoned".to_string())?;
+            (
+                daemon.agents_status_snapshot(),
+                daemon.live_sessions_snapshot(),
+                PalettePayload {
+                    actions: builtin_actions(),
+                    agents: Vec::new(),
+                    preferences: daemon.config.preferences.clone(),
+                    quick_send: daemon.config.general.quick_send,
+                    default_agent_id: daemon.registry.default_id(),
+                    config_path: daemon.config_path.display().to_string(),
+                    shortcut: daemon.config.general.shortcut.clone(),
+                    sessions: Vec::new(),
+                },
+            )
+        };
+        Ok(PalettePayload {
+            agents: compute_agents_status(agents_snapshot),
+            sessions: compute_live_sessions(&sessions_snapshot),
+            ..payload
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Live agent sessions for the Settings → Agents "Detect session" preview.

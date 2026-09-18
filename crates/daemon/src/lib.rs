@@ -2543,6 +2543,14 @@ mod tests {
         assert!(!command_line_has_component("", "omp"));
         assert!(!command_line_has_component("anything", ""));
 
+        // Regression: shell machinery that first_program can fail to see
+        // through must NEVER be pgrep'd — `env` runs in countless unrelated
+        // shell scripts, so `pgrep -x env` would light agents green that are
+        // not running at all.
+        assert!(!agent_process_running("env"));
+        assert!(!agent_process_running("sh"));
+        assert!(!agent_process_running("sh -c ''"));
+
         // Spawn a real child process with a distinctive program name, then
         // verify the check sees it while alive and loses it after exit.
         // (We must NOT probe the test binary itself: macOS `pgrep -f` never
