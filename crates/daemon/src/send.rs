@@ -138,13 +138,16 @@ pub fn execute_handoff(
         Err(e) => (None, Some(humanize_agent_error(&e))),
     };
     let ok = receipt.as_ref().map(|r| r.ok).unwrap_or(false);
-    // A resume refused for a live-owned session is not an agent crash: say
-    // what happened and what to do. Explicit targets never fall back
-    // silently, so this message is the only voice that failure gets.
+    // A failed send must NEVER carry an empty error: the outcome panel and
+    // the history render `error`, and "nothing" reads as a silent crash.
+    // Order: a recognized live-owner refusal gets its plain-language
+    // treatment (say what happened and what to do); any other failure
+    // receipt falls back to the agent's own detail; the catch-all keeps the
+    // invariant even for an agent that reports failure with no detail.
     if error.is_none() {
         if let Some(r) = receipt.as_ref() {
             if !r.ok {
-                error = humanize_receipt_failure(&agent.meta().name, r);
+                error = Some(failure_error_message(&agent.meta().name, r));
             }
         }
     }
@@ -188,10 +191,27 @@ pub fn humanize_agent_error(e: &AgentError) -> String {
     }
 }
 
+/// Builds the error message for a failure receipt: recognized refusals get
+/// the plain-language treatment, everything else falls back to the receipt's
+/// own detail, then to a catch-all. This is what keeps [`execute_handoff`]
+/// honest: a failed send NEVER carries an empty error — the outcome panel
+/// and history render `error`, and "nothing" reads as a silent crash.
+fn failure_error_message(agent_name: &str, receipt: &handover_core::agent::SendReceipt) -> String {
+    humanize_receipt_failure(agent_name, receipt)
+        .or_else(|| (!receipt.detail.trim().is_empty()).then(|| receipt.detail.clone()))
+        .unwrap_or_else(|| {
+            format!(
+                "`{}` reported failure with no further detail. Check the agent's output.",
+                agent_name
+            )
+        })
+}
+
 /// Plain-language error for known agent failure receipts. A resume refused
 /// because another live process owns the session (explicit targets never
 /// fall back) must not surface as raw agent prose or a bare "try again".
-/// Returns `None` for unrecognized failures — those keep the receipt detail.
+/// Returns `None` for unrecognized failures — [`execute_handoff`] then falls
+/// back to the receipt detail, so a failed send never carries an empty error.
 pub(crate) fn humanize_receipt_failure(
     agent_name: &str,
     receipt: &handover_core::agent::SendReceipt,
@@ -207,4 +227,66 @@ pub(crate) fn humanize_receipt_failure(
          to use a fresh session.",
         refusal.session_id, owner
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use handover_core::agent::SendReceipt;
+
+    fn receipt(ok: bool, detail: &str, stdout: Option<&str>) -> SendReceipt {
+        SendReceipt {
+            ok,
+            agent_id: "a".into(),
+            agent_name: "An Agent".into(),
+            detail: detail.into(),
+            stdout: stdout.map(Into::into),
+            stderr: None,
+            duration_ms: 5,
+            session_id: None,
+        }
+    }
+
+    #[test]
+    fn failure_error_message_uses_receipt_detail_for_unrecognized_failures() {
+        // Non-zero exit with output: the humanizer does not recognize it, so
+        // the agent's own detail ("Exited with status N") must surface —
+        // previously this exact path left `SendOutcome.error` as `None`.
+        let r = receipt(false, "Exited with status 1", Some("provider said no\n"));
+        assert_eq!(
+            failure_error_message("An Agent", &r),
+            "Exited with status 1"
+        );
+    }
+
+    #[test]
+    fn failure_error_message_never_returns_an_empty_string() {
+        // Worst case: an agent reports failure with no detail at all — the
+        // catch-all keeps the "failed sends never carry an empty error"
+        // invariant instead of rendering a blank outcome panel.
+        let r = receipt(false, "   ", None);
+        let msg = failure_error_message("An Agent", &r);
+        assert!(
+            !msg.trim().is_empty(),
+            "catch-all must produce a non-empty message, got: {msg:?}"
+        );
+        assert!(msg.contains("An Agent"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn live_owner_refusal_gets_plain_language_treatment() {
+        // stdout containing the live-owner pattern is recognized → the
+        // refusal explanation wins over the raw exit detail.
+        let r = receipt(
+            false,
+            "Exited with status 1",
+            Some("Session 20260812_130220_dbf5cf already has a live owner (pid 4242, running-age 12s)\n"),
+        );
+        let msg = failure_error_message("Hermes", &r);
+        assert!(
+            msg.contains("already open elsewhere"),
+            "refusal must be humanized, got: {msg}"
+        );
+        assert!(msg.contains("20260812_130220_dbf5cf"));
+    }
 }
