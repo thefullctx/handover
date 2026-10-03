@@ -181,10 +181,30 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
 7. **Desktop release bundle** (macOS `.app`):
 
    ```bash
-   cd apps/desktop
-   ./ui/node_modules/.bin/tauri build --ci
+   cd apps/desktop/src-tauri
+   ../ui/node_modules/.bin/tauri build --ci
    # Output: target/release/bundle/macos/Handover.app
    ```
+
+   **Do not hand-upload this to a release.** Published artifacts come from
+   `.github/workflows/release.yml` on a `v*` tag, so the binary is built by CI
+   from the tagged commit and gated by fmt + clippy + the full test suite. A
+   locally built `.app` may work and still be the wrong bytes.
+
+   To cut a release:
+
+   ```bash
+   # 1. Make sure version strings agree (Cargo.toml, tauri.conf.json, ui/package.json)
+   # 2. Tag and push — the tag IS the version
+   git tag v0.1.0 && git push origin v0.1.0
+   # 3. Watch the Release workflow; re-run it from the Actions tab if needed
+   ```
+
+   The bundle is `universal-apple-darwin` (Intel + Apple Silicon) and **ad-hoc
+   signed** (`"signingIdentity": "-"` in tauri.conf.json) because universal
+   binaries cannot be lipo-merged unsigned. Ad-hoc asserts no developer identity,
+   so Gatekeeper warns on first launch — users right-click → Open. Only a real
+   Developer ID + notarization removes that warning.
 
 8. **Manual verification checklist** (for anything touching platform layers):
    - global hotkey opens the palette instantly

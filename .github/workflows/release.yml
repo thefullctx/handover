@@ -1,0 +1,164 @@
+name: Release
+
+# Publishes a downloadable macOS build. Triggered by pushing a v* tag; the tag
+# is the single source of truth for the version, and CI is the only thing that
+# builds the artifact — so what ships is reproducible from the tagged commit,
+# never uploaded from someone's laptop.
+on:
+  push:
+    tags:
+      - "v*"
+  # Re-runs (or backfills) a release without moving the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish, e.g. v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: macOS app (universal)
+    runs-on: macos-latest
+    steps:
+      # Resolve the tag FIRST. On a tag push this is the pushed tag; on a manual
+      # dispatch it is the requested tag. Everything downstream — including which
+      # commit gets checked out — depends on it, so it cannot be resolved after
+      # checkout the way a naive version would.
+      - name: resolve tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+          case "$tag" in
+            v*) ;;
+            *) echo "::error::tag must start with v (got: $tag)"; exit 1 ;;
+          esac
+          echo "name=$tag" >> "$GITHUB_OUTPUT"
+          echo "building $tag"
+
+      # Checkout the TAG, not the triggering ref: a manual dispatch runs from a
+      # branch by default, which would publish a binary that does not match the
+      # tag it is filed under.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.tag.outputs.name }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/ui/package-lock.json
+
+      # Both slices are needed: the runner is Apple Silicon and x86_64 is
+      # cross-compiled, so without both targets lipo has nothing to merge and
+      # Intel users would get a binary that will not launch.
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+        with:
+          toolchain: 1.97.1
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # Don't publish a broken build: fmt + clippy + the full workspace suite
+      # gate the artifact, mirroring scripts/verify.sh.
+      - name: install UI deps
+        run: npm --prefix apps/desktop/ui ci
+
+      - name: verify (fmt, clippy, tests)
+        run: |
+          cargo fmt --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+
+      # Run from src-tauri so the CLI discovers tauri.conf.json; the CLI binary
+      # itself lives in the sibling ui/ package.
+      #
+      # universal-apple-darwin yields one binary for Intel and Apple Silicon.
+      # Ad-hoc signing ("-" in tauri.conf.json) asserts no developer identity, so
+      # Gatekeeper still warns on first launch — a deliberate trade until there
+      # is a Developer ID to notarize against.
+      - name: build universal app
+        working-directory: apps/desktop/src-tauri
+        run: ../ui/node_modules/.bin/tauri build --target universal-apple-darwin
+
+      - name: package
+        id: package
+        env:
+          TAG: ${{ steps.tag.outputs.name }}
+        run: |
+          set -euo pipefail
+          APP="target/universal-apple-darwin/release/bundle/macos/Handover.app"
+          test -d "$APP"
+          ARCHS="$(lipo -archs "$APP/Contents/MacOS/handover-desktop")"
+          echo "architectures: $ARCHS"
+          case "$ARCHS" in
+            *x86_64*arm64*) ;;
+            *) echo "::error::expected a universal binary, got: $ARCHS"; exit 1 ;;
+          esac
+          VERSION="${TAG#v}"
+          OUT="Handover-${VERSION}-macOS-universal.zip"
+          # ditto, not zip: it is the only archiver that preserves an .app
+          # bundle's symlinks and resource layout, which a plain zip corrupts.
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT"
+          echo "name=$OUT" >> "$GITHUB_OUTPUT"
+          ls -lh "$OUT"
+
+      - name: publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.name }}
+          ASSET: ${{ steps.package.outputs.name }}
+        run: |
+          set -euo pipefail
+          NOTES="$(mktemp)"
+          {
+            echo "## Handover $TAG"
+            echo
+            echo "Universal macOS build — runs on Apple Silicon and Intel."
+            echo
+            echo "### Install"
+            echo
+            echo "1. Download and unzip the asset."
+            echo "2. Drag **Handover.app** into your Applications folder."
+            echo "3. First launch warns that the developer cannot be verified — this"
+            echo "   build is **not** signed with a Developer ID. Right-click the app"
+            echo "   and choose **Open**, then confirm. One-time step."
+            echo
+            echo "Removing that warning entirely requires signing and notarizing with an"
+            echo "Apple Developer certificate, which this project does not currently do."
+            echo
+            echo "### First run"
+            echo
+            echo "Handover needs **Accessibility** permission for its global hotkey"
+            echo "(⌘⇧A). macOS prompts on first launch. If the hotkey does not respond,"
+            echo "toggle it in System Settings → Privacy & Security → Accessibility and"
+            echo "relaunch."
+            echo
+            echo "### Verify your download"
+            echo
+            echo "The release job asserts the binary is universal before publishing."
+            echo "To check locally:"
+            echo
+            echo '```'
+            echo "lipo -archs Handover.app/Contents/MacOS/handover-desktop"
+            echo "```"
+            echo
+            echo "should print \`x86_64 arm64\`."
+          } > "$NOTES"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Re-run: replace the asset rather than failing on a duplicate.
+            gh release upload "$TAG" "$ASSET" --clobber
+            gh release edit "$TAG" --notes-file "$NOTES"
+          else
+            gh release create "$TAG" "$ASSET" --title "Handover $TAG" --notes-file "$NOTES"
+          fi
+          gh release view "$TAG" --json url,assets -q '"published: \(.url)", (.assets[] | "asset: \(.name)  \(.size) bytes")'
