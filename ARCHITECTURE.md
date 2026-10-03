@@ -343,11 +343,19 @@ CLI drift**: keep it in sync with `session_id_from_filename()` in
 
 | agent | sessions on disk | resume (interactive) | resume (headless) | streams |
 |---|---|---|---|---|
-| claude | `~/.claude/projects/<proj>/<uuid>.jsonl` (not installed here — best-effort) | `claude --resume <id>` / `claude --continue` | `claude -p "{P}" --resume <id>` | `-p` streams |
+| claude | `~/.claude/projects/<proj>/<uuid>.jsonl` (filename = id) | `claude --resume <id>` / `claude --continue` | `claude -p "{P}" --resume <id>` | `-p` streams |
 | codex | `~/.codex/sessions/<Y>/<M>/<D>/rollout-<ts>-<uuid>.jsonl` (trailing uuid = id) | `codex resume <id>` / `codex resume` (freshest) | `codex exec resume <id>` / `codex exec --last` | exec streams, `-o json` |
 | droid | `~/.factory/sessions/<enc-cwd>/<uuid>.jsonl` (per-session `.settings.json` sibling) | `droid --resume [id]` (`-r`, defaults to last modified) | `droid exec -s <id> "{P}"` / `droid exec -s <id> -f file` | `-o stream-json` / `-o json` |
 | omp | `~/.omp/agent/sessions/<enc-cwd>/<ts>_<sessionId>.jsonl` (id after last `_`) + breadcrumbs `terminal-sessions/<tid>` | `omp -r <id>` (id prefix OK, picker if omitted) / `omp -c` | `omp -p "{P}" -r <id>` / `omp -p "{P}" -c` | `-p` streams, `--print-thoughts` |
 | hermes | SQLite `~/.hermes/state.db` (FTS5) — no fs glob; use `hermes sessions list`. Id format `20260812_130220_dbf5cf` | `hermes --resume <id>` (`-r`) / `--continue` (`-c`) by id or title | `hermes chat -q "{P}" --resume <id>` / `--resume latest --in <dir>` | `chat -q` streams |
+
+**Verified 2026-10-04** (`<agent> --version` + `scripts/probe-sessions.sh`, filenames
+and mtimes only): claude 2.1.288, codex-cli 0.160.0, droid 0.233.0, omp 18.5.0,
+opencode 2.0.19. **hermes is the exception** — its launcher could not be run
+(the bundled virtualenv is gone), so `hermes --version` and
+`hermes sessions list` both fail and its row above remains the 2026-08-14 probe,
+unconfirmed. Per-agent versions are recorded in `ADAPTER_COMPAT`
+(`handover-config`); see "Adapter compatibility" below.
 
 #### Adapter compatibility
 
