@@ -31,7 +31,14 @@ jobs:
       matrix:
         # The desktop app is macOS/Linux only (tray, hotkey, pgrep, tty
         # approval); the libraries and daemon build anywhere.
-        os: [ubuntu-latest, macos-latest]
+        #
+        # Pinned to the explicit Ubuntu version rather than `ubuntu-latest`:
+        # the `latest` label migrates 24.04 -> 26.04 between 2026-10-19 and
+        # 2026-11-19, which would move the runner image under us. Naming the
+        # version means the OS only changes when this line changes — and the
+        # Tauri system packages below are the thing most likely to break when
+        # it does.
+        os: [ubuntu-26.04, macos-latest]
     steps:
       - uses: actions/checkout@v7
 
@@ -74,7 +81,7 @@ jobs:
 
   ui:
     name: UI (lint, typecheck, tests, build)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: apps/desktop/ui
@@ -113,7 +120,7 @@ jobs:
 
   smoke:
     name: End-to-end smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
