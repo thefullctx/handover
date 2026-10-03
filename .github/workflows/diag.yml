@@ -9,32 +9,38 @@ jobs:
   diag:
     runs-on: ubuntu-26.04
     steps:
-      - name: Find a portable probe
+      - name: probe viability
         run: |
-          NAME="ho-probe-550e8400e29b41d4a716446655440000"
-          P="/tmp/$NAME"
+          set +e
+          N="ho-probe-550e8400e29b41d4a716446655440000"
+          P="/tmp/$N"
 
-          echo "=== A: copied /bin/sleep (current approach) ==="
-          cp /bin/sleep "$P.a"; "$P.a" 30 & A=$!; sleep 0.5
-          echo "alive: $(kill -0 $A 2>/dev/null && echo yes || echo NO)"; kill $A 2>/dev/null
+          cp /bin/sleep "$P.a" 2>&1
+          "$P.a" 30 &
+          A=$!
+          sleep 1
+          if kill -0 $A 2>/dev/null; then echo "A copied-sleep: ALIVE"; else echo "A copied-sleep: DEAD"; fi
+          kill $A 2>/dev/null
+          wait $A 2>/dev/null
 
-          echo "=== B: shebang script with the long name ==="
-          printf '#!/bin/sh\nsleep 30\n' > "$P.b"; chmod +x "$P.b"
-          "$P.b" & B=$!; sleep 0.5
-          echo "alive: $(kill -0 $B 2>/dev/null && echo yes || echo NO)"
-          echo "comm: $(cat /proc/$B/comm 2>/dev/null)"
-          echo "ps line: $(ps -axo command= | grep -F "$NAME.b" | head -1)"
-          echo "pgrep -x full: $(pgrep -x "$NAME.b" >/dev/null 2>&1 && echo match || echo no)"
-          echo "ps component split test:"
-          ps -axo command= | grep -F "$NAME.b" | head -1 | tr -s ' /' '\n\n\n' | grep -Fx "$NAME.b" && echo "  COMPONENT MATCH OK" || echo "  COMPONENT MATCH FAILED"
+          printf '#!/bin/sh\nsleep 30\n' > "$P.b"
+          chmod +x "$P.b"
+          "$P.b" &
+          B=$!
+          sleep 1
+          if kill -0 $B 2>/dev/null; then echo "B shebang-script: ALIVE"; else echo "B shebang-script: DEAD"; fi
+          echo "B comm: $(cat /proc/$B/comm 2>/dev/null)"
+          echo "B ps: $(ps -axo command= | grep -F "$N.b" | head -1)"
+          if ps -axo command= | grep -F "$N.b" | head -1 | tr -s ' /' '\n\n\n' | grep -qx "$N.b"; then
+            echo "B COMPONENT: OK"
+          else
+            echo "B COMPONENT: FAILED"
+          fi
+          if pgrep -x "$N.b" >/dev/null 2>&1; then echo "B pgrep -x: match"; else echo "B pgrep -x: no"; fi
           kill $B 2>/dev/null
+          wait $B 2>/dev/null
 
-          echo "=== C: symlink to /bin/sleep ==="
-          ln -s /bin/sleep "$P.c"; "$P.c" 30 & C=$!; sleep 0.5
-          echo "alive: $(kill -0 $C 2>/dev/null && echo yes || echo NO)"; kill $C 2>/dev/null
-
-          echo "=== D: does the interpreter path survive argv0 rename? ==="
-          echo "=== E: what is /bin/sleep actually? ==="
-          file /bin/sleep 2>/dev/null || ls -l /bin/sleep
-          ls -l /bin/sh
-          rm -f "$P".?
+          echo "E /bin/sleep -> $(readlink -f /bin/sleep)"
+          echo "E /bin/sh -> $(readlink -f /bin/sh)"
+          rm -f "$P".a "$P".b "$P".c
+          echo DONE
