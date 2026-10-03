@@ -5,3 +5,14 @@ apps/desktop/src-tauri/gen
 apps/desktop/src-tauri/target
 .DS_Store
 *.log
+
+# Never commit secrets or machine-local state. Handover itself refuses to
+# read a .env for this reason, but the repo has to refuse to track one too.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.keystore
+config.toml
+!docs/sample-config.toml

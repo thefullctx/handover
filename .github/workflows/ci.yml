@@ -67,12 +67,12 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          # No package-lock.json is committed yet, so `npm install` (not
-          # `npm ci`). Commit the lockfile and switch to `npm ci` for
-          # reproducible installs.
-          cache-dependency-path: apps/desktop/ui/package.json
+          cache-dependency-path: apps/desktop/ui/package-lock.json
 
-      - run: npm install
+      # `npm ci`, not `npm install`: the lockfile is committed, so CI installs
+      # exactly the reviewed dependency tree and fails loudly if package.json
+      # and the lockfile ever disagree.
+      - run: npm ci
 
       - name: eslint
         run: npm run lint
