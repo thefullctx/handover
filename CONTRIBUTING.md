@@ -265,6 +265,23 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
   terminal". Never claim success without verification, and never inject into a session
   that is no longer blocked (re-check before injecting).
 
+### Known dependency advisories
+
+`npm audit` reports two moderate advisories in `vitest` (GHSA-82fw-gwwq-j7x9, path
+traversal / arbitrary file read in `@vitest/mocker`). This is accepted deliberately:
+
+- **Dev-only.** Vitest never ships in the app bundle; it is not in the Tauri artifact.
+- **The vulnerable path is not used.** The advisory covers *redirect* mocks. Every
+  `vi.mock` in this repo passes a factory (`vi.mock("../lib/tauri", () => tauri)`),
+  which is a different code path.
+- **No patched 3.x exists.** `vitest@3.2.7` pins `@vitest/mocker` to exactly `3.2.7`,
+  so the only upstream fix is `vitest@5` — two majors away. Forcing a 5.x mocker under
+  a 3.x runner via `overrides` is not a safe shortcut.
+
+Revisit when either becomes true: a test starts using a redirect mock, or we migrate to
+vitest 5 for other reasons. CI runs `npm audit --omit=dev` as a **non-blocking** step —
+production dependencies only, so real risk stays visible without this noise.
+
 ## Coding style
 
 - Follow the existing layout: pure logic in `core`, orchestration in `daemon`, platform in
