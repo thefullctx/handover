@@ -754,15 +754,21 @@ fn settings_window_builder(
     // Empty title: Overlay title bar still shows traffic lights, but no
     // "Handover Settings" caption in the top-left (brand lives in the sidebar).
     // Transparent so `--ui-opacity` glass fills match the palette window.
-    WebviewWindowBuilder::new(app, "settings", WebviewUrl::default())
+    let builder = WebviewWindowBuilder::new(app, "settings", WebviewUrl::default())
         .title("")
         .inner_size(620.0, 680.0)
         .min_inner_size(480.0, 520.0)
         .resizable(true)
         .decorations(true)
         .transparent(true)
-        .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .visible(false)
+        .visible(false);
+    // Overlay title bar is a macOS-only Tauri API — the method does not exist
+    // on other targets, so it cannot sit in the chain unconditionally. Linux
+    // and Windows keep standard decorations (see reveal_config's platform
+    // handling for the same shape of split).
+    #[cfg(target_os = "macos")]
+    let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay);
+    builder
 }
 
 /// Shows (and creates, if needed) the Settings window, optionally switching
