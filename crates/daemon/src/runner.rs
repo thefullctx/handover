@@ -49,9 +49,16 @@ pub(crate) fn resolve_cli_program(program: &str) -> String {
     program.to_string()
 }
 
+/// Hard cap on the stdout/stderr a bounded command may buffer. The child is
+/// drained to EOF either way (so it never blocks on a full pipe), but only
+/// this much is kept — a discovery command that prints megabytes must not be
+/// able to grow the daemon's memory without bound.
+const MAX_CAPTURED_OUTPUT_BYTES: usize = 256 * 1024;
+
 /// Spawns a command with piped stdout/stderr and a hard wall-clock budget.
-/// Returns `None` on spawn failure, timeout (the child is killed), or wait
-/// error; `Some(Output)` otherwise, mirroring `Command::output`.
+/// Returns `None` on spawn failure, timeout (the child and its process group
+/// are killed), or wait error; `Some(Output)` otherwise, mirroring
+/// `Command::output`.
 ///
 /// Pipes are drained concurrently via background threads so the child never
 /// blocks on a full pipe buffer (the bug that `GenericCommandAgent` already
@@ -60,7 +67,15 @@ pub(crate) fn run_command_bounded(
     command: &mut std::process::Command,
     timeout: std::time::Duration,
 ) -> Option<std::process::Output> {
-    use std::io::Read;
+    // Own process group, exactly like the agent runner: on timeout we signal
+    // `-pid`, so a discovery command that spawned children takes them down
+    // with it instead of leaking orphans. `Child::kill` alone only reaps the
+    // direct child.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
     let mut child = command
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -71,22 +86,14 @@ pub(crate) fn run_command_bounded(
     // blocks on a full OS pipe buffer (~64KB). Without this, a command
     // that writes more than the buffer would deadlock: the child waits
     // on write() and the parent waits on try_wait().
-    let stdout_h = child.stdout.take().map(|r| {
-        std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            let mut reader = r;
-            let _ = reader.read_to_end(&mut buf);
-            buf
-        })
-    });
-    let stderr_h = child.stderr.take().map(|r| {
-        std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            let mut reader = r;
-            let _ = reader.read_to_end(&mut buf);
-            buf
-        })
-    });
+    let stdout_h = child
+        .stdout
+        .take()
+        .map(|r| std::thread::spawn(move || drain_capped(r, MAX_CAPTURED_OUTPUT_BYTES)));
+    let stderr_h = child
+        .stderr
+        .take()
+        .map(|r| std::thread::spawn(move || drain_capped(r, MAX_CAPTURED_OUTPUT_BYTES)));
 
     let deadline = std::time::Instant::now() + timeout;
     loop {
@@ -102,15 +109,52 @@ pub(crate) fn run_command_bounded(
             }
             Ok(None) => {
                 if std::time::Instant::now() >= deadline {
-                    let _ = child.kill();
+                    kill_child_tree(&mut child);
                     let _ = child.wait();
                     return None;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(20));
             }
-            Err(_) => return None,
+            Err(_) => {
+                kill_child_tree(&mut child);
+                let _ = child.wait();
+                return None;
+            }
         }
     }
+}
+
+/// Reads a pipe to EOF, keeping at most `cap` bytes. Reading continues past
+/// the cap (bytes are discarded, not buffered) so the child still sees the
+/// pipe drain and never blocks on write.
+fn drain_capped(mut reader: impl std::io::Read, cap: usize) -> Vec<u8> {
+    let mut kept: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) | Err(_) => return kept,
+            Ok(n) => {
+                let room = cap.saturating_sub(kept.len());
+                kept.extend_from_slice(&chunk[..n.min(room)]);
+            }
+        }
+    }
+}
+
+/// Kill the bounded command's whole process tree (see the `process_group(0)`
+/// above). Mirrors the agent runner: signal the group first, then fall back
+/// to killing the direct child.
+fn kill_child_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let pid = child.id() as i32;
+        // Negative PID = process group id. libc directly: shelling out to
+        // `kill` breaks under Finder-launched restricted PATHs.
+        unsafe {
+            let _ = libc::killpg(pid, libc::SIGKILL);
+        }
+    }
+    let _ = child.kill();
 }
 
 /// Runs a session cli-list command with a hard [`CLI_LIST_TIMEOUT`] budget.

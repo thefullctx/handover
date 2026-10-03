@@ -69,13 +69,13 @@ pub fn serve(
                 inflight.fetch_sub(1, Ordering::Relaxed);
                 respond(
                     request,
-                    Err((
-                        503,
-                        format!(
+                    Err(ApiError {
+                        status: 503,
+                        message: format!(
                             "Handover is busy ({} requests in flight). Try again in a moment.",
                             MAX_INFLIGHT_REQUESTS
                         ),
-                    )),
+                    }),
                 );
                 continue;
             }
@@ -98,9 +98,9 @@ fn handle_request(mut request: Request, daemon: SharedDaemon, shutdown: Arc<Atom
 
     let needs_auth = requires_auth(&method, &path);
     if needs_auth {
-        let token = daemon.0.lock().unwrap().api_token.clone();
+        let token = daemon.lock().api_token.clone();
         if let Err(message) = authorize_request(&request, &token) {
-            respond(request, Err((401, message)));
+            respond(request, Err(ApiError::unauthorized(message)));
             return;
         }
     }
@@ -116,19 +116,58 @@ fn handle_request(mut request: Request, daemon: SharedDaemon, shutdown: Arc<Atom
         if reader.read_to_end(&mut body).is_err() {
             respond(
                 request,
-                Err((400, "Could not read request body".to_string())),
+                Err(ApiError::bad_request("Could not read request body")),
             );
             return;
         }
     }
     if body.len() > MAX_BODY_BYTES {
-        respond(request, Err((400, "Request body too large".to_string())));
+        respond(
+            request,
+            Err(ApiError::bad_request("Request body too large")),
+        );
         return;
     }
     let body = String::from_utf8_lossy(&body).into_owned();
 
-    let result = dispatch(&method, &path, &body, daemon, &shutdown);
-    respond(request, result.map_err(|m| (400, m)));
+    respond(request, dispatch(&method, &path, &body, daemon, &shutdown));
+}
+
+/// An error response with an explicit HTTP status.
+///
+/// The status lives in the type, never in the message text: the previous
+/// implementation re-classified any error whose message happened to start with
+/// `"Not found:"` as a 404, so a future message beginning with those words
+/// would silently change its status code.
+struct ApiError {
+    status: u16,
+    message: String,
+}
+
+impl ApiError {
+    /// Malformed or rejected client input.
+    fn bad_request(message: impl Into<String>) -> Self {
+        Self {
+            status: 400,
+            message: message.into(),
+        }
+    }
+
+    /// Missing or wrong bearer token.
+    fn unauthorized(message: impl Into<String>) -> Self {
+        Self {
+            status: 401,
+            message: message.into(),
+        }
+    }
+
+    /// No such route.
+    fn not_found(message: impl Into<String>) -> Self {
+        Self {
+            status: 404,
+            message: message.into(),
+        }
+    }
 }
 
 /// Routes that can change state or trigger agent work require a bearer token.
@@ -192,13 +231,12 @@ fn dispatch(
     body: &str,
     daemon: SharedDaemon,
     shutdown: &AtomicBool,
-) -> Result<String, String> {
-    let daemon = daemon.0;
+) -> Result<String, ApiError> {
     match (method, path) {
         (Method::Get, "/health") => Ok(json!({"ok": true}).to_string()),
-        (Method::Get, "/status") => Ok(daemon.lock().unwrap().status().to_string()),
+        (Method::Get, "/status") => Ok(daemon.lock().status().to_string()),
         (Method::Get, "/actions") => {
-            let d = daemon.lock().unwrap();
+            let d = daemon.lock();
             Ok(serde_json::to_string(&d.actions()).map_err(serde_err)?)
         }
         (Method::Get, "/agents") => {
@@ -209,7 +247,7 @@ fn dispatch(
             // Snapshot under the lock (cheap), probe off it: the process
             // check + provider-health probe must not block other requests.
             let snapshot = {
-                let d = daemon.lock().unwrap();
+                let d = daemon.lock();
                 d.agents_status_snapshot()
             };
             let mut agents = crate::compute_agents_status(snapshot);
@@ -221,13 +259,13 @@ fn dispatch(
             Ok(serde_json::to_string(&agents).map_err(serde_err)?)
         }
         (Method::Get, "/preferences") => {
-            let d = daemon.lock().unwrap();
+            let d = daemon.lock();
             Ok(serde_json::to_string(&d.config.preferences).map_err(serde_err)?)
         }
         (Method::Get, "/history") => {
             // Requires auth (falls through to `_ => true` in `requires_auth`):
             // history contains full prompts and agent replies.
-            let d = daemon.lock().unwrap();
+            let d = daemon.lock();
             Ok(serde_json::to_string(&d.history.recent()).map_err(serde_err)?)
         }
         (Method::Get, "/sessions") => {
@@ -238,7 +276,7 @@ fn dispatch(
             // Snapshot under the lock (cheap), scan off it: glob walks and
             // cli-list subprocesses must not block other requests.
             let snapshot = {
-                let d = daemon.lock().unwrap();
+                let d = daemon.lock();
                 d.live_sessions_snapshot()
             };
             Ok(
@@ -253,8 +291,8 @@ fn dispatch(
             // "run inside a session" flow. Explicit pins must be live (never
             // pin a phantom id). An optional `tty` records the approval
             // channel's target (the terminal you ran `attach` from).
-            let params: Value = parse_body(body)?;
-            let agent_id = required_str(&params, "agent_id")?;
+            let params: Value = parse_body(body).map_err(ApiError::bad_request)?;
+            let agent_id = required_str(&params, "agent_id").map_err(ApiError::bad_request)?;
             let session_id = params
                 .get("session_id")
                 .and_then(|s| s.as_str())
@@ -263,21 +301,23 @@ fn dispatch(
                 .get("tty")
                 .and_then(|s| s.as_str())
                 .map(|s| s.to_string());
-            // Snapshot + scan off the lock: cli-list subprocesses and glob
-            // walks must not block other requests while liveness is checked.
-            let live = {
-                let d = daemon.lock().unwrap();
-                crate::compute_live_sessions(&d.live_sessions_snapshot())
+            // Snapshot under the lock (cheap config reads), scan OFF it: the
+            // glob walk and the cli-list subprocess (5s budget) must never
+            // block /health, /status, the palette, or a handoff in flight.
+            let snapshot = {
+                let d = daemon.lock();
+                d.live_sessions_snapshot()
             };
+            let live = crate::compute_live_sessions(&snapshot);
             let resolved = match session_id {
                 Some(sid) => {
                     let is_live = live
                         .iter()
                         .any(|s| s.agent_id == agent_id && s.session_id == sid);
                     if !is_live {
-                        return Err(format!(
+                        return Err(ApiError::bad_request(format!(
                             "Session `{sid}` for `{agent_id}` is not live. Run `handover sessions` to list live sessions."
-                        ));
+                        )));
                     }
                     sid
                 }
@@ -286,31 +326,32 @@ fn dispatch(
                     .find(|s| s.agent_id == agent_id)
                     .map(|s| s.session_id.clone())
                     .ok_or_else(|| {
-                        format!(
+                        ApiError::bad_request(format!(
                             "No live session for `{agent_id}`. Start one (or pass an explicit session id)."
-                        )
+                        ))
                     })?,
             };
             // Liveness was computed off the lock, so the session may have
             // ended in between. Fail soft: session resolution re-checks a
             // pinned session is live before every handoff, so a stale pin
             // never lands in a dead session.
-            let mut d = daemon.lock().unwrap();
+            let mut d = daemon.lock();
             d.pin_session(agent_id, &resolved)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| ApiError::bad_request(e.to_string()))?;
             if let Some(t) = tty {
                 if !t.trim().is_empty() {
                     d.set_approval_target(agent_id, &t)
-                        .map_err(|e| e.to_string())?;
+                        .map_err(|e| ApiError::bad_request(e.to_string()))?;
                 }
             }
             Ok(json!({ "ok": true, "agent_id": agent_id, "session_id": resolved }).to_string())
         }
         (Method::Post, "/sessions/unpin") => {
-            let params: Value = parse_body(body)?;
-            let agent_id = required_str(&params, "agent_id")?;
-            let mut d = daemon.lock().unwrap();
-            d.unpin_session(agent_id).map_err(|e| e.to_string())?;
+            let params: Value = parse_body(body).map_err(ApiError::bad_request)?;
+            let agent_id = required_str(&params, "agent_id").map_err(ApiError::bad_request)?;
+            let mut d = daemon.lock();
+            d.unpin_session(agent_id)
+                .map_err(|e| ApiError::bad_request(e.to_string()))?;
             Ok(json!({ "ok": true, "agent_id": agent_id }).to_string())
         }
         (Method::Post, "/sessions/approve") => {
@@ -322,9 +363,9 @@ fn dispatch(
             // Two-phase: resolve under the lock (fast), execute without it
             // (slow — injection + 10s verify polling must not block other API
             // requests, the palette, or handoffs in flight).
-            let params: Value = parse_body(body)?;
-            let agent_id = required_str(&params, "agent_id")?;
-            let session_id = required_str(&params, "session_id")?;
+            let params: Value = parse_body(body).map_err(ApiError::bad_request)?;
+            let agent_id = required_str(&params, "agent_id").map_err(ApiError::bad_request)?;
+            let session_id = required_str(&params, "session_id").map_err(ApiError::bad_request)?;
             let approve = params
                 .get("approve")
                 .and_then(|a| a.as_bool())
@@ -334,40 +375,40 @@ fn dispatch(
                 // off it: the liveness re-check, still-blocked tail peek,
                 // and command build read the filesystem.
                 let plan = {
-                    let d = daemon.lock().unwrap();
+                    let d = daemon.lock();
                     d.resolve_approval_plan(agent_id, session_id, approve)
-                        .map_err(|e| e.to_string())?
+                        .map_err(|e| ApiError::bad_request(e.to_string()))?
                 };
-                crate::complete_approval(plan).map_err(|e| e.to_string())?
+                crate::complete_approval(plan).map_err(|e| ApiError::bad_request(e.to_string()))?
             };
             // Execute outside the lock: injection + verify polling (up to
             // 10s). Must not block /health, /status, palette opens, or
             // handoffs in flight.
             let result = crate::execute_approval(&req, crate::approval::APPROVAL_VERIFY_BUDGET)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| ApiError::bad_request(e.to_string()))?;
             Ok(serde_json::to_string(&result).map_err(serde_err)?)
         }
         (Method::Post, "/preferences") => {
-            let params: Value = parse_body(body)?;
-            let action_id = required_str(&params, "action_id")?;
-            let agent_id = required_str(&params, "agent_id")?;
-            let mut d = daemon.lock().unwrap();
+            let params: Value = parse_body(body).map_err(ApiError::bad_request)?;
+            let action_id = required_str(&params, "action_id").map_err(ApiError::bad_request)?;
+            let agent_id = required_str(&params, "agent_id").map_err(ApiError::bad_request)?;
+            let mut d = daemon.lock();
             d.set_preference(action_id, agent_id);
             Ok(json!({"ok": true}).to_string())
         }
         (Method::Post, "/render") => {
-            let params: Value = parse_body(body)?;
-            let action_id = required_str(&params, "action_id")?;
-            let capture: Capture = capture_param(&params)?;
-            let d = daemon.lock().unwrap();
+            let params: Value = parse_body(body).map_err(ApiError::bad_request)?;
+            let action_id = required_str(&params, "action_id").map_err(ApiError::bad_request)?;
+            let capture: Capture = capture_param(&params).map_err(ApiError::bad_request)?;
+            let d = daemon.lock();
             let prompt = d
                 .render_prompt(action_id, capture)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| ApiError::bad_request(e.to_string()))?;
             Ok(json!({"prompt": prompt}).to_string())
         }
         (Method::Post, "/send") => {
-            let params: Value = parse_body(body)?;
-            let action_id = required_str(&params, "action_id")?;
+            let params: Value = parse_body(body).map_err(ApiError::bad_request)?;
+            let action_id = required_str(&params, "action_id").map_err(ApiError::bad_request)?;
             let agent_id = params
                 .get("agent_id")
                 .and_then(|a| a.as_str())
@@ -377,34 +418,34 @@ fn dispatch(
                 .get("session_id")
                 .and_then(|a| a.as_str())
                 .map(|s| s.to_string());
-            let capture = capture_param(&params)?;
+            let capture = capture_param(&params).map_err(ApiError::bad_request)?;
             // Plan under the lock (fast): capture enrichment + config
             // resolution. Complete + execute with the lock released (slow) —
             // a long-running agent must not block other requests.
             let (agent, request) = {
                 let plan = {
-                    let d = daemon.lock().unwrap();
+                    let d = daemon.lock();
                     d.resolve_send_plan(
                         action_id,
                         agent_id.as_deref(),
                         session_id.as_deref(),
                         capture,
                     )
-                    .map_err(|e| e.to_string())?
+                    .map_err(|e| ApiError::bad_request(e.to_string()))?
                 };
-                crate::complete_send(plan).map_err(|e| e.to_string())?
+                crate::complete_send(plan).map_err(|e| ApiError::bad_request(e.to_string()))?
             };
             let outcome = crate::execute_handoff(agent, request, None, crate::next_handoff_id());
             // Record the completed handoff so /history and the tray menu see
             // it. `HandoffHistory` has its own lock — this is a quick push.
-            daemon.lock().unwrap().history.record(outcome.clone());
+            daemon.lock().history.record(outcome.clone());
             Ok(serde_json::to_string(&outcome).map_err(serde_err)?)
         }
         (Method::Post, "/quit") => {
             shutdown.store(true, Ordering::Relaxed);
             Ok(json!({"ok": true}).to_string())
         }
-        _ => Err(format!("Not found: {method} {path}")),
+        _ => Err(ApiError::not_found(format!("Not found: {method} {path}"))),
     }
 }
 
@@ -429,22 +470,14 @@ fn parse_body(body: &str) -> Result<Value, String> {
     serde_json::from_str(body).map_err(|e| format!("Invalid JSON body: {e}"))
 }
 
-fn serde_err(e: serde_json::Error) -> String {
-    format!("Serialization error: {e}")
+fn serde_err(e: serde_json::Error) -> ApiError {
+    ApiError::bad_request(format!("Serialization error: {e}"))
 }
 
-fn respond(request: Request, result: Result<String, (u16, String)>) {
+fn respond(request: Request, result: Result<String, ApiError>) {
     let (code, json) = match result {
         Ok(value) => (200, value),
-        Err((code, message)) => {
-            // Prefer 404 for unknown routes; keep 400 for bad client input.
-            let code = if code == 400 && message.starts_with("Not found:") {
-                404
-            } else {
-                code
-            };
-            (code, json!({"error": message}).to_string())
-        }
+        Err(e) => (e.status, json!({ "error": e.message }).to_string()),
     };
     let response = Response::from_string(json)
         .with_status_code(StatusCode(code))
@@ -453,4 +486,57 @@ fn respond(request: Request, result: Result<String, (u16, String)>) {
                 .expect("valid header"),
         );
     let _ = request.respond(response);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Only `/health`, `/status`, `/actions`, `/agents` and `GET /preferences`
+    /// are open. Everything else — every POST, every other GET, every unknown
+    /// method — must present the bearer token.
+    #[test]
+    fn auth_matrix_covers_every_route_shape() {
+        // Open by design (process probes + the palette's non-sensitive reads).
+        for path in ["/health", "/status", "/actions", "/agents", "/preferences"] {
+            assert!(
+                !requires_auth(&Method::Get, path),
+                "GET {path} must stay open"
+            );
+        }
+        // Authenticated: they reveal session ids, prompts and replies, or they
+        // change state / trigger agent work.
+        for path in ["/history", "/sessions", "/sessions/pin", "/send", "/quit"] {
+            assert!(requires_auth(&Method::Get, path), "GET {path} needs auth");
+            assert!(requires_auth(&Method::Post, path), "POST {path} needs auth");
+        }
+        // Unknown routes and unknown methods fail closed.
+        assert!(requires_auth(&Method::Get, "/nope"));
+        assert!(requires_auth(&Method::Post, "/nope"));
+        assert!(requires_auth(&Method::Delete, "/health"));
+    }
+
+    #[test]
+    fn constant_time_eq_matches_only_identical_bytes() {
+        assert!(constant_time_eq(b"abc", b"abc"));
+        assert!(constant_time_eq(b"", b""));
+        assert!(!constant_time_eq(b"abc", b"abd"));
+        assert!(!constant_time_eq(b"abc", b"ab"));
+        // Same length, one differing bit.
+        assert!(!constant_time_eq(b"ho_1", b"ho_2"));
+    }
+
+    #[test]
+    fn error_status_lives_in_the_type_not_the_message() {
+        // Regression: the status used to be sniffed from the message prefix, so
+        // an error merely STARTING with "Not found:" turned into a 404. The
+        // constructors now carry the code explicitly.
+        assert_eq!(ApiError::bad_request("boom").status, 400);
+        assert_eq!(ApiError::unauthorized("nope").status, 401);
+        assert_eq!(ApiError::not_found("Not found: GET /x").status, 404);
+        // A 400 whose text happens to look like a 404 keeps its own status.
+        let e = ApiError::bad_request("Not found: that capture");
+        assert_eq!(e.status, 400);
+        assert!(e.message.starts_with("Not found:"));
+    }
 }

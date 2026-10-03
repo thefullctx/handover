@@ -20,6 +20,7 @@ pub(crate) fn agent_process_running(command: &str) -> bool {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| program.clone());
     if basename.is_empty()
+        || basename.starts_with('-')
         || matches!(
             basename.as_str(),
             "sh" | "bash" | "zsh" | "python" | "python3"
@@ -31,6 +32,12 @@ pub(crate) fn agent_process_running(command: &str) -> bool {
         )
     {
         // A shell/interpreter/wrapper alone is not the agent itself.
+        //
+        // A leading `-` is refused too: the program name comes from the user's
+        // own agent command and is handed straight to `pgrep` as an argument,
+        // so a name like `-f` would be read as a FLAG (matching every live
+        // process) and light every agent green. Failing closed keeps the dot
+        // red instead — a wrong light, never a wrong command.
         return false;
     }
     let probe = |extra: &[&str]| {

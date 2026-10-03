@@ -134,7 +134,7 @@ fn main() {
             // Persisted appearance + shortcut, captured before `shared_state`
             // is moved into app state (used to theme/register below).
             let (appearance, daemon_config_shortcut) = {
-                let d = shared_state.0.lock().unwrap();
+                let d = shared_state.lock();
                 (d.config.general.appearance, d.config.general.shortcut.clone())
             };
             app.manage(shared_state);
@@ -324,9 +324,7 @@ fn main() {
 /// truth, so the palette always matches the Settings slider.
 fn sync_live_settings(app: &AppHandle) {
     let state = app.state::<SharedDaemon>();
-    let Ok(daemon) = state.0.lock() else {
-        return;
-    };
+    let daemon = state.lock();
     let _ = app.emit(
         "ui-opacity:changed",
         handover_config::clamp_ui_opacity(daemon.config.general.ui_opacity),
@@ -374,12 +372,7 @@ fn open_history(app: &AppHandle, handoff_id: Option<String>) {
 /// Called at startup and after every completed handoff (the menu is static
 /// between handoffs, so the index in each row id stays valid).
 fn rebuild_tray_menu(app: &AppHandle) {
-    let recent = app
-        .state::<SharedDaemon>()
-        .0
-        .lock()
-        .map(|d| d.history.recent())
-        .unwrap_or_default();
+    let recent = app.state::<SharedDaemon>().lock().history.recent();
 
     let title =
         MenuItem::with_id(app, "title", "Handover", false, None::<&str>).expect("title item");
@@ -453,12 +446,10 @@ async fn palette_payload(state: tauri::State<'_, SharedDaemon>) -> Result<Palett
     // subprocesses), provider-health probes, glob walks, cli-list subprocesses
     // — runs in spawn_blocking so a slow agent (a hung cli-list has a 5s
     // budget) can never block a tokio worker thread and delay palette opens.
-    let daemon = state.0.clone();
+    let daemon = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let (agents_snapshot, sessions_snapshot, payload) = {
-            let daemon = daemon
-                .lock()
-                .map_err(|_| "daemon lock poisoned".to_string())?;
+            let daemon = daemon.lock();
             (
                 daemon.agents_status_snapshot(),
                 daemon.live_sessions_snapshot(),
@@ -488,14 +479,12 @@ async fn palette_payload(state: tauri::State<'_, SharedDaemon>) -> Result<Palett
 /// Runs off the command thread: cli-list agents (Hermes) spawn a process.
 #[tauri::command]
 async fn live_sessions(state: tauri::State<'_, SharedDaemon>) -> Result<Vec<LiveSession>, String> {
-    let daemon = state.0.clone();
+    let daemon = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         // Snapshot under the lock (cheap config reads), scan off it: glob
         // walks and cli-list subprocesses must not block other commands.
         let snapshot = {
-            let d = daemon
-                .lock()
-                .map_err(|_| "daemon lock poisoned".to_string())?;
+            let d = daemon.lock();
             d.live_sessions_snapshot()
         };
         Ok(compute_live_sessions(&snapshot))
@@ -521,13 +510,11 @@ async fn approve_session(
     session_id: String,
     approve: bool,
 ) -> Result<handover_daemon::approval::ApprovalResult, String> {
-    let daemon = state.0.clone();
+    let daemon = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         // Phase 1: plan under the lock (fast — config validation only).
         let plan = {
-            let d = daemon
-                .lock()
-                .map_err(|_| "daemon lock poisoned".to_string())?;
+            let d = daemon.lock();
             d.resolve_approval_plan(&agent_id, &session_id, approve)
                 .map_err(|e| e.to_string())?
         };
@@ -572,14 +559,7 @@ fn read_dropped_files(
     state: tauri::State<SharedDaemon>,
     paths: Vec<String>,
 ) -> Result<Vec<DroppedFile>, String> {
-    let patterns = state
-        .0
-        .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
-        .config
-        .privacy
-        .excluded_paths
-        .clone();
+    let patterns = state.lock().config.privacy.excluded_paths.clone();
     let mut out = Vec::new();
     for p in paths {
         let path = std::path::PathBuf::from(&p);
@@ -698,14 +678,12 @@ fn list_actions() -> Vec<Action> {
 async fn list_agents(
     state: tauri::State<'_, SharedDaemon>,
 ) -> Result<Vec<AgentMetaStatus>, String> {
-    let daemon = state.0.clone();
+    let daemon = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         // Snapshot under the lock (cheap), probe off it: the live-process
         // check + provider-health probe must not block other commands.
         let snapshot = {
-            let d = daemon
-                .lock()
-                .map_err(|_| "daemon lock poisoned".to_string())?;
+            let d = daemon.lock();
             d.agents_status_snapshot()
         };
         Ok(compute_agents_status(snapshot))
@@ -717,7 +695,7 @@ async fn list_agents(
 /// All configured agents (including disabled ones) for the management UI.
 #[tauri::command]
 fn configured_agents(state: tauri::State<SharedDaemon>) -> Vec<handover_config::AgentConfig> {
-    state.0.lock().unwrap().configured_agents()
+    state.lock().configured_agents()
 }
 
 /// Adds an agent from the palette's management form. Persists to config.toml
@@ -753,24 +731,14 @@ fn add_agent(
         approval_channel: None,
         approval_target: None,
     };
-    state
-        .0
-        .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
-        .add_agent(agent)
-        .map_err(|e| e.to_string())
+    state.lock().add_agent(agent).map_err(|e| e.to_string())
 }
 
 /// Removes a configured agent by id. Persists the config and forgets any
 /// per-action preferences that pointed at it.
 #[tauri::command]
 fn remove_agent(state: tauri::State<SharedDaemon>, id: String) -> Result<(), String> {
-    state
-        .0
-        .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
-        .remove_agent(&id)
-        .map_err(|e| e.to_string())
+    state.lock().remove_agent(&id).map_err(|e| e.to_string())
 }
 
 /// Shared config for the Settings window (built hidden; opened on demand).
@@ -804,7 +772,7 @@ fn open_settings(app: &AppHandle, tab: Option<&str>) {
     // or created on demand) cannot lose the request to an event race.
     if let Some(tab) = tab {
         if let Some(pending) = app.try_state::<PendingSettingsTab>() {
-            *pending.0.lock().unwrap() = Some(tab.to_string());
+            *pending.0.lock().unwrap_or_else(|p| p.into_inner()) = Some(tab.to_string());
         }
     }
     let window = match app.get_webview_window("settings") {
@@ -812,9 +780,9 @@ fn open_settings(app: &AppHandle, tab: Option<&str>) {
         None => match settings_window_builder(app).build() {
             Ok(w) => {
                 // Match palette appearance for the newly created chrome.
-                if let Ok(daemon) = app.state::<SharedDaemon>().0.lock() {
-                    let _ = w.set_theme(theme_for(daemon.config.general.appearance));
-                }
+                let state = app.state::<SharedDaemon>();
+                let daemon = state.lock();
+                let _ = w.set_theme(theme_for(daemon.config.general.appearance));
                 w
             }
             Err(e) => {
@@ -864,7 +832,7 @@ struct AppInfo {
 
 #[tauri::command]
 fn app_info(app: AppHandle, state: tauri::State<SharedDaemon>) -> AppInfo {
-    let daemon = state.0.lock().unwrap();
+    let daemon = state.lock();
     AppInfo {
         version: env!("CARGO_PKG_VERSION").to_string(),
         config_path: daemon.config_path.display().to_string(),
@@ -881,22 +849,14 @@ fn app_info(app: AppHandle, state: tauri::State<SharedDaemon>) -> AppInfo {
 /// Persists the quick-send toggle from the Settings window.
 #[tauri::command]
 fn set_quick_send(state: tauri::State<SharedDaemon>, enabled: bool) -> Result<(), String> {
-    state
-        .0
-        .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
-        .set_quick_send(enabled);
+    state.lock().set_quick_send(enabled);
     Ok(())
 }
 
 /// Persists the notifications toggle from the Settings window.
 #[tauri::command]
 fn set_notifications(state: tauri::State<SharedDaemon>, enabled: bool) -> Result<(), String> {
-    state
-        .0
-        .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
-        .set_notifications(enabled);
+    state.lock().set_notifications(enabled);
     Ok(())
 }
 
@@ -912,10 +872,7 @@ fn set_shortcut(
     let parsed = Shortcut::from_str(&shortcut)
         .map_err(|e| format!("`{shortcut}` is not a valid shortcut ({e})"))?;
     let old = {
-        let daemon = state
-            .0
-            .lock()
-            .map_err(|_| "daemon lock poisoned".to_string())?;
+        let daemon = state.lock();
         daemon.config.general.shortcut.clone()
         // NOTE: nothing is persisted here. The config is only updated AFTER
         // the new accelerator registers successfully — otherwise a failed
@@ -934,11 +891,7 @@ fn set_shortcut(
         return Err(e);
     }
     // Registration succeeded — only now persist.
-    state
-        .0
-        .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
-        .set_shortcut(&shortcut);
+    state.lock().set_shortcut(&shortcut);
     Ok(())
 }
 
@@ -959,11 +912,7 @@ fn set_launch_at_startup(
             .disable()
             .map_err(|e| format!("could not disable launch at startup: {e}"))?;
     }
-    state
-        .0
-        .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
-        .set_launch_at_startup(enabled);
+    state.lock().set_launch_at_startup(enabled);
     Ok(())
 }
 
@@ -973,22 +922,14 @@ fn set_excluded_paths(
     state: tauri::State<SharedDaemon>,
     patterns: Vec<String>,
 ) -> Result<(), String> {
-    state
-        .0
-        .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
-        .set_excluded_paths(patterns);
+    state.lock().set_excluded_paths(patterns);
     Ok(())
 }
 
 /// Clears the session handoff history (Settings → Privacy / palette).
 #[tauri::command]
 fn clear_history(state: tauri::State<SharedDaemon>) -> Result<(), String> {
-    state
-        .0
-        .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
-        .clear_history();
+    state.lock().clear_history();
     Ok(())
 }
 
@@ -1014,11 +955,7 @@ fn set_appearance(
     // Parse via `Appearance::from_str` — the single source for the
     // value↔enum mapping (mirrors `as_str`, used by `app_info`).
     let parsed: handover_config::Appearance = appearance.parse()?;
-    state
-        .0
-        .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
-        .set_appearance(parsed);
+    state.lock().set_appearance(parsed);
     for (_, window) in app.webview_windows() {
         let _ = window.set_theme(theme_for(parsed));
     }
@@ -1036,11 +973,7 @@ fn set_ui_opacity(
     opacity: f64,
 ) -> Result<f64, String> {
     let clamped = handover_config::clamp_ui_opacity(opacity);
-    state
-        .0
-        .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
-        .set_ui_opacity(clamped);
+    state.lock().set_ui_opacity(clamped);
     let _ = app.emit("ui-opacity:changed", clamped);
     Ok(clamped)
 }
@@ -1057,7 +990,7 @@ fn take_settings_tab(state: tauri::State<PendingSettingsTab>) -> Option<String> 
 fn available_agents(
     state: tauri::State<SharedDaemon>,
 ) -> Vec<handover_daemon::catalog::GalleryAgent> {
-    let daemon = state.0.lock().unwrap();
+    let daemon = state.lock();
     let configured: Vec<String> = daemon.config.agents.iter().map(|a| a.id.clone()).collect();
     handover_daemon::catalog::gallery(&configured)
 }
@@ -1152,9 +1085,7 @@ fn configure_agent(
         approval_target: None,
     };
     state
-        .0
         .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
         .add_agent(agent.clone())
         .map_err(|e| e.to_string())?;
     Ok(agent)
@@ -1164,9 +1095,7 @@ fn configure_agent(
 #[tauri::command]
 fn set_default_agent(state: tauri::State<SharedDaemon>, id: String) -> Result<(), String> {
     state
-        .0
         .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
         .set_default_agent(&id)
         .map_err(|e| e.to_string())
 }
@@ -1180,9 +1109,7 @@ fn set_agent_enabled(
     enabled: bool,
 ) -> Result<(), String> {
     state
-        .0
         .lock()
-        .map_err(|_| "daemon lock poisoned".to_string())?
         .set_agent_enabled(&id, enabled)
         .map_err(|e| e.to_string())
 }
@@ -1196,7 +1123,7 @@ fn open_settings_window(app: AppHandle) {
 /// Reveals the config file in the platform file manager.
 #[tauri::command]
 fn reveal_config(state: tauri::State<SharedDaemon>) -> Result<(), String> {
-    let path = state.0.lock().unwrap().config_path.clone();
+    let path = state.lock().config_path.clone();
     #[cfg(target_os = "macos")]
     std::process::Command::new("open")
         .arg("-R")
@@ -1243,10 +1170,7 @@ async fn send_handoff(
         // probe, session scan). Holding the lock across the scan would block
         // every other command.
         let plan = {
-            let daemon = state
-                .0
-                .lock()
-                .map_err(|_| "daemon lock poisoned".to_string())?;
+            let daemon = state.lock();
             daemon
                 .resolve_send_plan(
                     &action_id,
@@ -1297,29 +1221,19 @@ async fn send_handoff(
     .map_err(|e| format!("handoff task failed: {e}"))?;
 
     // Session history + tray submenu (both take their own locks — quick).
-    if let Ok(daemon) = state.0.lock() {
-        daemon.history.record(outcome.clone());
-    }
+    state.lock().history.record(outcome.clone());
     rebuild_tray_menu(&app);
     Ok(outcome)
 }
 
 #[tauri::command]
 fn recent_handoffs(state: tauri::State<SharedDaemon>) -> Vec<SendOutcome> {
-    state
-        .0
-        .lock()
-        .map(|d| d.history.recent())
-        .unwrap_or_default()
+    state.lock().history.recent()
 }
 
 #[tauri::command]
 fn set_preference(state: tauri::State<SharedDaemon>, action_id: String, agent_id: String) {
-    state
-        .0
-        .lock()
-        .unwrap()
-        .set_preference(&action_id, &agent_id);
+    state.lock().set_preference(&action_id, &agent_id);
 }
 
 #[tauri::command]
@@ -1357,11 +1271,9 @@ fn native_notify(app: &AppHandle, title: &str, body: &str, critical: bool) {
         // Honor the General → Notifications toggle: when disabled, handoff
         // notifications are suppressed (critical errors still log).
         if let Some(state) = app.try_state::<SharedDaemon>() {
-            if let Ok(d) = state.0.lock() {
-                if !d.config.general.notifications {
-                    log::info!("notification suppressed (General → Notifications is off)");
-                    return;
-                }
+            if !state.lock().config.general.notifications {
+                log::info!("notification suppressed (General → Notifications is off)");
+                return;
             }
         }
     }

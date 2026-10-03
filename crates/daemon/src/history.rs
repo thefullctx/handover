@@ -56,9 +56,18 @@ pub const HANDOFF_HISTORY_CAP: usize = 10;
 pub struct HandoffHistory(Arc<Mutex<VecDeque<SendOutcome>>>);
 
 impl HandoffHistory {
+    /// Locks the buffer, recovering from a poisoned mutex — see
+    /// [`crate::SharedDaemon::lock`] for why the whole daemon recovers rather
+    /// than cascading panics.
+    fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<SendOutcome>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// Records a completed handoff, keeping the most recent `HANDOFF_HISTORY_CAP`.
     pub fn record(&self, outcome: SendOutcome) {
-        let mut queue = self.0.lock().unwrap();
+        let mut queue = self.lock();
         queue.push_front(outcome);
         while queue.len() > HANDOFF_HISTORY_CAP {
             queue.pop_back();
@@ -67,12 +76,12 @@ impl HandoffHistory {
 
     /// The recent handoffs, newest first.
     pub fn recent(&self) -> Vec<SendOutcome> {
-        self.0.lock().unwrap().iter().cloned().collect()
+        self.lock().iter().cloned().collect()
     }
 
     /// Number of recorded handoffs (never exceeds `HANDOFF_HISTORY_CAP`).
     pub fn len(&self) -> usize {
-        self.0.lock().unwrap().len()
+        self.lock().len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -81,7 +90,7 @@ impl HandoffHistory {
 
     /// Empties the session history (the palette's "Clear history" action).
     pub fn clear(&self) {
-        self.0.lock().unwrap().clear();
+        self.lock().clear();
     }
 }
 

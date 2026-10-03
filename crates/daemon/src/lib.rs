@@ -1,8 +1,9 @@
 //! Handover daemon service.
 //!
-//! The daemon owns the configuration and the agent registry, captures
-//! clipboard content, renders prompts and executes handoffs. It exposes the
-//! same logic through two clients:
+//! The daemon owns the configuration and the agent registry, normalizes
+//! captures (dropped text/files, CLI args, stdin — the clipboard is never
+//! read), renders prompts and executes handoffs. It exposes the same logic
+//! through two clients:
 //! * the local HTTP API (used by the CLI, and served in-process by the GUI)
 //! * direct in-process calls (used by the Tauri GUI)
 //!
@@ -108,6 +109,26 @@ pub struct Daemon {
 /// Shared, mutable daemon state managed by the GUI / HTTP server.
 #[derive(Clone)]
 pub struct SharedDaemon(pub Arc<Mutex<Daemon>>);
+
+impl SharedDaemon {
+    /// Locks the daemon, recovering from a poisoned mutex.
+    ///
+    /// A panic while the lock is held poisons it for the rest of the process:
+    /// every later `lock().unwrap()` panics too, so one bad thread would brick
+    /// the HTTP API and the palette rather than failing loudly once. Nothing
+    /// in `Daemon` holds a cross-field invariant that a mid-mutation panic
+    /// could corrupt — every persisted write is atomic on disk — so recovering
+    /// (and logging loudly) beats taking the whole app down with it.
+    ///
+    /// Every API handler and Tauri command goes through this instead of
+    /// calling `.0.lock()` directly, so poison handling is uniform.
+    pub fn lock(&self) -> std::sync::MutexGuard<'_, Daemon> {
+        self.0.lock().unwrap_or_else(|poisoned| {
+            log::error!("daemon state was poisoned by an earlier panic; recovering");
+            poisoned.into_inner()
+        })
+    }
+}
 
 impl Daemon {
     pub fn load() -> Result<Self, DaemonError> {
@@ -2801,5 +2822,259 @@ mod tests {
         assert!(out.status.success());
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hi");
         assert_eq!(String::from_utf8_lossy(&out.stderr).trim(), "oops");
+    }
+
+    #[test]
+    fn run_command_bounded_caps_buffered_output() {
+        // A discovery command that prints far more than any caller needs must
+        // not be able to grow the daemon's memory without bound. The child is
+        // still drained to EOF (so it never blocks on a full pipe) — only the
+        // retained bytes are capped.
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "i=0; while [ $i -lt 20000 ]; do printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n'; i=$((i+1)); done"]);
+        let out = run_command_bounded(&mut cmd, std::time::Duration::from_secs(20))
+            .expect("child must finish");
+        assert!(out.status.success());
+        assert!(
+            out.stdout.len() <= 256 * 1024,
+            "buffered output must stay capped, got {} bytes",
+            out.stdout.len()
+        );
+        // ...and it really did read more than the cap, so the cap is what
+        // stopped it (not a child that happened to print very little).
+        assert!(
+            out.stdout.len() > 200 * 1024,
+            "fixture should exceed the cap"
+        );
+    }
+
+    #[test]
+    fn flag_like_program_name_is_never_pg_repd() {
+        // `first_program` can return a name that starts with `-` from a
+        // hand-edited agent command. Passing that straight to `pgrep` would be
+        // parsed as a FLAG (`-f` matches every process) and light every agent
+        // green. It must fail closed instead.
+        assert!(!agent_process_running("-f"));
+        assert!(!agent_process_running("--help"));
+    }
+
+    #[test]
+    fn unknown_route_answers_404_not_400() {
+        use std::io::{Read, Write};
+        use std::net::TcpStream;
+        use std::sync::atomic::AtomicBool;
+
+        fn raw_request(port: u16, method: &str, path: &str, token: Option<&str>) -> String {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let auth = token
+                .map(|t| format!("Authorization: Bearer {t}\r\n"))
+                .unwrap_or_default();
+            let req = format!(
+                "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}Connection: close\r\n\r\n"
+            );
+            stream.write_all(req.as_bytes()).unwrap();
+            let mut buf = String::new();
+            stream.read_to_string(&mut buf).unwrap();
+            buf
+        }
+
+        let daemon = test_daemon(Config::default_config());
+        let token = daemon.api_token.clone();
+        let handle = api::serve(shared(daemon), 0, Arc::new(AtomicBool::new(false))).unwrap();
+
+        let resp = raw_request(handle.port, "GET", "/definitely-not-a-route", Some(&token));
+        assert!(
+            resp.starts_with("HTTP/1.1 404"),
+            "unknown route must be 404: {resp}"
+        );
+        // A real route with a bad request keeps 400.
+        let resp = raw_request(handle.port, "POST", "/preferences", Some(&token));
+        assert!(
+            resp.starts_with("HTTP/1.1 400"),
+            "malformed body must be 400: {resp}"
+        );
+    }
+
+    #[test]
+    fn mutating_routes_reject_requests_without_the_token() {
+        // Only `/sessions` GET had an auth test; the routes that can actually
+        // trigger agent work or stop the daemon must be covered too — an
+        // unauthenticated local process must never be able to drive them.
+        use std::io::{Read, Write};
+        use std::net::TcpStream;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        fn raw_request(
+            port: u16,
+            method: &str,
+            path: &str,
+            body: Option<&str>,
+            token: Option<&str>,
+        ) -> String {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let body_str = body.unwrap_or("");
+            let auth = token
+                .map(|t| format!("Authorization: Bearer {t}\r\n"))
+                .unwrap_or_default();
+            let req = format!(
+                "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body_str}",
+                body_str.len()
+            );
+            stream.write_all(req.as_bytes()).unwrap();
+            let mut buf = String::new();
+            stream.read_to_string(&mut buf).unwrap();
+            buf
+        }
+
+        let daemon = test_daemon(Config::default_config());
+        let token = daemon.api_token.clone();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let handle = api::serve(shared(daemon), 0, Arc::clone(&shutdown)).unwrap();
+
+        let send_body = r#"{"action_id":"ask","capture":{"source":{"type":"manual"},"content":{"type":"text","text":"hi"}}}"#;
+        for (method, path, body) in [
+            ("POST", "/send", Some(send_body)),
+            ("POST", "/render", Some(send_body)),
+            ("POST", "/quit", Some("{}")),
+            (
+                "POST",
+                "/preferences",
+                Some(r#"{"action_id":"ask","agent_id":"demo-echo"}"#),
+            ),
+        ] {
+            let anon = raw_request(handle.port, method, path, body, None);
+            assert!(
+                anon.starts_with("HTTP/1.1 401"),
+                "{method} {path} must reject an unauthenticated request: {anon}"
+            );
+            assert!(
+                !shutdown.load(Ordering::Relaxed),
+                "{method} {path} must not take effect without the token"
+            );
+        }
+
+        // The same routes DO work once the token is presented.
+        let authed = raw_request(handle.port, "POST", "/quit", Some("{}"), Some(&token));
+        assert!(
+            authed.starts_with("HTTP/1.1 200"),
+            "authenticated POST /quit must succeed: {authed}"
+        );
+        assert!(shutdown.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn sessions_pin_never_holds_the_lock_across_the_session_scan() {
+        // Regression: POST /sessions/pin used to call `compute_live_sessions`
+        // while still holding the daemon mutex, so a slow cli-list (5s budget
+        // per agent) froze /health, /status, the palette and every in-flight
+        // handoff. The scan must happen off the lock, like every other route.
+        use std::io::{Read, Write};
+        use std::net::TcpStream;
+        use std::sync::atomic::AtomicBool;
+
+        fn raw_request(
+            port: u16,
+            method: &str,
+            path: &str,
+            body: Option<&str>,
+            token: Option<&str>,
+        ) -> String {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let body_str = body.unwrap_or("");
+            let auth = token
+                .map(|t| format!("Authorization: Bearer {t}\r\n"))
+                .unwrap_or_default();
+            let req = format!(
+                "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body_str}",
+                body_str.len()
+            );
+            stream.write_all(req.as_bytes()).unwrap();
+            let mut buf = String::new();
+            stream.read_to_string(&mut buf).unwrap();
+            buf
+        }
+
+        let mut config = Config::default_config();
+        // The cli-list drops a marker as soon as the scan starts, then keeps
+        // running — so the test can observe "the scan is in flight right now"
+        // deterministically instead of racing the request thread.
+        let marker = std::env::temp_dir().join(format!(
+            "ho-pin-scan-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let marker_arg = marker.display().to_string();
+        config.agents = vec![AgentConfig {
+            id: "slowlist".into(),
+            name: "SlowList".into(),
+            kind: handover_config::AgentKind::Session,
+            command: "true".into(),
+            description: None,
+            working_dir: None,
+            env: Default::default(),
+            timeout_secs: Some(10),
+            enabled: true,
+            demo: false,
+            default_action: None,
+            session_glob: None,
+            session_cli_list: Some(vec![
+                "sh".into(),
+                "-c".into(),
+                format!("touch '{marker_arg}'; sleep 3"),
+            ]),
+            resume_command: Some("true --resume {SESSION}".into()),
+            permission_marker: None,
+            approval_channel: None,
+            approval_target: None,
+        }];
+        let daemon = test_daemon(config);
+        let token = daemon.api_token.clone();
+        let handle = api::serve(shared(daemon), 0, Arc::new(AtomicBool::new(false))).unwrap();
+
+        // Fire the slow pin on its own thread...
+        let pin = {
+            let token = token.clone();
+            std::thread::spawn(move || {
+                raw_request(
+                    handle.port,
+                    "POST",
+                    "/sessions/pin",
+                    Some(r#"{"agent_id":"slowlist"}"#),
+                    Some(&token),
+                )
+            })
+        };
+
+        // ...and wait until its cli-list is demonstrably mid-scan. If the route
+        // held the daemon lock across that scan, the lock is held RIGHT NOW.
+        let scan_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !marker.exists() {
+            assert!(
+                std::time::Instant::now() < scan_deadline,
+                "the pin's cli-list never started — the fixture is wrong"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        let started = std::time::Instant::now();
+        let status = raw_request(handle.port, "GET", "/status", None, None);
+        let elapsed = started.elapsed();
+        assert!(
+            status.starts_with("HTTP/1.1 200"),
+            "/status must answer during the scan: {status}"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_millis(1000),
+            "/status waited {elapsed:?} behind the pin's session scan — the daemon \
+             lock is being held across the scan again"
+        );
+        let _ = std::fs::remove_file(&marker);
+
+        // The pin itself still completes (it just doesn't hold the lock).
+        let pin_response = pin.join().expect("pin thread");
+        assert!(
+            pin_response.starts_with("HTTP/1.1 400"),
+            "pinning an agent with no live session fails cleanly: {pin_response}"
+        );
     }
 }
