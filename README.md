@@ -47,7 +47,7 @@ the live-process check and approval injection are Unix-specific.
 ### Prerequisites
 
 - **Rust** (stable): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- **Node.js** 20+ and npm (for the desktop UI)
+- **Node.js** 22.12+ and npm (for the desktop UI)
 - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
 - **Linux**: Tauri system dependencies — see
   [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)

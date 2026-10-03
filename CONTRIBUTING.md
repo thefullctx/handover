@@ -266,22 +266,18 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
   terminal". Never claim success without verification, and never inject into a session
   that is no longer blocked (re-check before injecting).
 
-### Known dependency advisories
+### Dependency advisories
 
-`npm audit` reports two moderate advisories in `vitest` (GHSA-82fw-gwwq-j7x9, path
-traversal / arbitrary file read in `@vitest/mocker`). This is accepted deliberately:
+`npm audit` is clean, and CI runs `npm audit --omit=dev --audit-level=high` as a
+**non-blocking** step — it reports, it does not gate.
 
-- **Dev-only.** Vitest never ships in the app bundle; it is not in the Tauri artifact.
-- **The vulnerable path is not used.** The advisory covers *redirect* mocks. Every
-  `vi.mock` in this repo passes a factory (`vi.mock("../lib/tauri", () => tauri)`),
-  which is a different code path.
-- **No patched 3.x exists.** `vitest@3.2.7` pins `@vitest/mocker` to exactly `3.2.7`,
-  so the only upstream fix is `vitest@5` — two majors away. Forcing a 5.x mocker under
-  a 3.x runner via `overrides` is not a safe shortcut.
-
-Revisit when either becomes true: a test starts using a redirect mock, or we migrate to
-vitest 5 for other reasons. CI runs `npm audit --omit=dev` as a **non-blocking** step —
-production dependencies only, so real risk stays visible without this noise.
+This was not always true. Two moderate advisories in vitest
+(GHSA-82fw-gwwq-j7x9, path traversal / arbitrary file read in `@vitest/mocker`)
+were carried for several releases rather than fixed, because the only upstream
+fix was a two-major jump. They were cleared when the UI moved to vitest 5,
+which also raised the floor to Node 22.12. If a future major does the same,
+weigh it the same way: a dev-only advisory in a code path the repo does not use
+is not worth an unbounded migration, but it should be a decision, not a drift.
 
 ## Coding style
 

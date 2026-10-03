@@ -89,6 +89,10 @@ async function renderApp(
   history: unknown[] = [],
   handlers: Record<string, unknown> = {}
 ) {
+  // Explicit per-render clear. Vitest 5 also clears mock history between
+  // tests (clearMocks now defaults on), so this is belt-and-braces — but it
+  // keeps the harness correct on its own terms instead of depending on a
+  // runner default a future config change could quietly switch off.
   tauri.invoke.mockImplementation(async (cmd: string) => {
     if (cmd in handlers) return handlers[cmd];
     switch (cmd) {
@@ -682,9 +686,6 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     await user.keyboard("{Enter}");
     await screen.findByTestId("chat-inflight");
     expect(screen.getByTestId("chat-activity-prompt-size")).toHaveTextContent("—");
-    // Settle before finishing: a send still in flight would keep the mock
-    // call log dirty for the next test in this file.
-    await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
   });
 
   it("drops chunks from a stale handoff that arrive after the next send began", async () => {

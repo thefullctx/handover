@@ -90,7 +90,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: apps/desktop/ui/package-lock.json
 
@@ -110,9 +110,8 @@ jobs:
         run: npm run build
 
       # Advisory visibility for what actually ships. `--omit=dev` scopes it to
-      # production dependencies, so the accepted dev-only vitest advisory (see
-      # CONTRIBUTING "Known dependency advisories") does not drown out real
-      # risk. Non-blocking on purpose: this reports, it does not gate.
+      # production dependencies. Non-blocking on purpose: this reports, it does
+      # not gate (see CONTRIBUTING "Dependency advisories").
       - name: audit (production deps, non-blocking)
         if: always()
         continue-on-error: true
