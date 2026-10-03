@@ -44,7 +44,25 @@ the live-process check and approval injection are Unix-specific.
 
 ## Installation
 
+### macOS — download the app
+
+Grab **Handover-<version>-macOS-universal.zip** from the
+[releases page](https://github.com/thefullctx/handover/releases), unzip it, and
+drag `Handover.app` into Applications. One binary covers both Apple Silicon and
+Intel.
+
+The first launch will say the developer cannot be verified. **This is expected** —
+the release is not signed with an Apple Developer certificate. Right-click the app,
+choose **Open**, and confirm; that warning does not come back.
+
+Then give it Accessibility permission (System Settings → Privacy & Security →
+Accessibility) so the global hotkey works.
+
+> Building from source instead? See [Prerequisites](#prerequisites) below.
+
 ### Prerequisites
+
+Only needed if you are building from source.
 
 - **Rust** (stable): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 - **Node.js** 22.12+ and npm (for the desktop UI)
