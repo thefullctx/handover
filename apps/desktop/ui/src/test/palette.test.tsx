@@ -524,6 +524,10 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
 
     const inflight = await screen.findByTestId("chat-inflight");
     expect(within(inflight).getByText(/Codex is working/)).toBeInTheDocument();
+    // The daemon announces the handoff id before any chunk, and the UI only
+    // accepts chunks matching the id it was told about. Firing `started`
+    // first is what the real event order looks like.
+    tauri.listeners["handoff:started"]({ payload: { id: "handoff-0", prompt_len: 128 } });
     tauri.listeners["handoff:output"]({
       payload: { id: "handoff-0", stream: "stdout", chunk: "Working through" },
     });
@@ -652,6 +656,73 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     expect(details!.querySelector("pre")).toHaveTextContent(
       "Investigate this issue and fix it. Context: panic: something exploded"
     );
+  });
+
+  it("does not carry the previous handoff's prompt size into the next one", async () => {
+    const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
+    await chooseAgent(user, /Codex/);
+    const composer = screen.getByLabelText("Chat message");
+
+    await user.click(composer);
+    await user.keyboard("first");
+    await user.keyboard("{Enter}");
+    await screen.findByTestId("chat-inflight");
+    tauri.listeners["handoff:started"]({ payload: { id: "handoff-1", prompt_len: 4096 } });
+    await waitFor(() =>
+      expect(screen.getByTestId("stat-prompt-size")).toHaveTextContent("4.0 KB")
+    );
+    await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
+
+    // Second handoff: until the daemon reports THIS send's prompt size, the
+    // stat must read "not measured" rather than repeating the last one's
+    // number, which would misattribute one handoff's prompt to another.
+    await user.click(composer);
+    await user.keyboard("second");
+    await user.keyboard("{Enter}");
+    await screen.findByTestId("chat-inflight");
+    expect(screen.getByTestId("stat-prompt-size")).toHaveTextContent("—");
+    // Settle before finishing: a send still in flight would keep the mock
+    // call log dirty for the next test in this file.
+    await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
+  });
+
+  it("drops chunks from a stale handoff that arrive after the next send began", async () => {
+    const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
+    await chooseAgent(user, /Codex/);
+    const composer = screen.getByLabelText("Chat message");
+
+    await user.click(composer);
+    await user.keyboard("first");
+    await user.keyboard("{Enter}");
+    await screen.findByTestId("chat-inflight");
+    tauri.listeners["handoff:started"]({ payload: { id: "handoff-1", prompt_len: 128 } });
+    await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
+
+    // Second send is under way, but the daemon has not yet announced its id.
+    // A straggler from handoff-1 must not be spliced into handoff-2's turn —
+    // it would corrupt the transcript and stamp a bogus time-to-first-response.
+    await user.click(composer);
+    await user.keyboard("second");
+    await user.keyboard("{Enter}");
+    const inflight = await screen.findByTestId("chat-inflight");
+
+    tauri.listeners["handoff:output"]({
+      payload: { id: "handoff-1", stream: "stdout", chunk: "STALE OUTPUT" },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("stat-output-volume")).not.toHaveTextContent("STALE")
+    );
+    expect(within(inflight).queryByText(/STALE OUTPUT/)).not.toBeInTheDocument();
+
+    // Once this handoff announces itself, its own chunks are accepted.
+    tauri.listeners["handoff:started"]({ payload: { id: "handoff-2", prompt_len: 128 } });
+    tauri.listeners["handoff:output"]({
+      payload: { id: "handoff-2", stream: "stdout", chunk: "FRESH OUTPUT" },
+    });
+    await waitFor(() =>
+      expect(within(inflight).getByText(/FRESH OUTPUT/)).toBeInTheDocument()
+    );
+    await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
   });
 });
 

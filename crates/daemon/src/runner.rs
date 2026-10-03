@@ -86,21 +86,32 @@ pub(crate) fn run_command_bounded(
     // blocks on a full OS pipe buffer (~64KB). Without this, a command
     // that writes more than the buffer would deadlock: the child waits
     // on write() and the parent waits on try_wait().
-    let stdout_h = child
+    //
+    // Each drainer writes into a shared buffer as it reads and signals
+    // completion over a channel, rather than being `join`ed. Joining
+    // unconditionally reintroduces an unbounded wait: a grandchild that
+    // inherited the pipe keeps it open past the child's own exit, so the
+    // drainer never sees EOF. Sharing the buffer means we can take whatever
+    // was captured when the grace period ends — output already read is never
+    // lost just because the pipe stayed open.
+    let out = child
         .stdout
         .take()
-        .map(|r| std::thread::spawn(move || drain_capped(r, MAX_CAPTURED_OUTPUT_BYTES)));
-    let stderr_h = child
+        .map(|r| Drain::spawn(r, MAX_CAPTURED_OUTPUT_BYTES));
+    let err = child
         .stderr
         .take()
-        .map(|r| std::thread::spawn(move || drain_capped(r, MAX_CAPTURED_OUTPUT_BYTES)));
+        .map(|r| Drain::spawn(r, MAX_CAPTURED_OUTPUT_BYTES));
 
     let deadline = std::time::Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                let stdout = stdout_h.and_then(|h| h.join().ok()).unwrap_or_default();
-                let stderr = stderr_h.and_then(|h| h.join().ok()).unwrap_or_default();
+                // The child is gone, so its own pipe ends are closed and the
+                // drainers finish quickly. Budget them separately rather than
+                // trusting that: an inherited pipe could hold them open.
+                let stdout = out.map(|d| d.take(DRAIN_GRACE)).unwrap_or_default();
+                let stderr = err.map(|d| d.take(DRAIN_GRACE)).unwrap_or_default();
                 return Some(std::process::Output {
                     status,
                     stdout,
@@ -124,20 +135,57 @@ pub(crate) fn run_command_bounded(
     }
 }
 
-/// Reads a pipe to EOF, keeping at most `cap` bytes. Reading continues past
-/// the cap (bytes are discarded, not buffered) so the child still sees the
-/// pipe drain and never blocks on write.
-fn drain_capped(mut reader: impl std::io::Read, cap: usize) -> Vec<u8> {
-    let mut kept: Vec<u8> = Vec::new();
-    let mut chunk = [0u8; 8192];
-    loop {
-        match reader.read(&mut chunk) {
-            Ok(0) | Err(_) => return kept,
-            Ok(n) => {
-                let room = cap.saturating_sub(kept.len());
-                kept.extend_from_slice(&chunk[..n.min(room)]);
+/// How long to wait for a drainer once the child has exited. Generous for a
+/// real drain (the pipe is already at EOF, so this is pure slack), but finite:
+/// a grandchild holding the pipe open must not turn a "bounded" command into an
+/// unbounded wait. On expiry we keep whatever was captured, so the fail-soft
+/// direction is "discovery may see a truncated listing", never "the daemon
+/// hangs".
+const DRAIN_GRACE: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// One pipe being drained on a background thread.
+///
+/// The buffer is shared and appended to *as bytes arrive*, so [`Drain::take`]
+/// can return real output even when the drainer is still parked on a read
+/// that will never hit EOF.
+struct Drain {
+    buf: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+    done: std::sync::mpsc::Receiver<()>,
+}
+
+impl Drain {
+    fn spawn(mut reader: impl std::io::Read + Send + 'static, cap: usize) -> Self {
+        let buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (tx, done) = std::sync::mpsc::channel();
+        let sink = std::sync::Arc::clone(&buf);
+        std::thread::spawn(move || {
+            let mut chunk = [0u8; 8192];
+            loop {
+                match reader.read(&mut chunk) {
+                    // EOF, or an unreadable pipe: stop, but keep what we have.
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if let Ok(mut kept) = sink.lock() {
+                            // Keep reading past the cap (bytes are discarded,
+                            // not buffered) so the child still sees the pipe
+                            // drain and never blocks on write.
+                            let room = cap.saturating_sub(kept.len());
+                            kept.extend_from_slice(&chunk[..n.min(room)]);
+                        }
+                    }
+                }
             }
-        }
+            let _ = tx.send(());
+        });
+        Self { buf, done }
+    }
+
+    /// Waits up to `grace` for EOF, then returns everything captured so far.
+    /// A drainer that panicked, disconnected, or is still blocked on an
+    /// inherited pipe all degrade to "whatever the buffer holds".
+    fn take(self, grace: std::time::Duration) -> Vec<u8> {
+        let _ = self.done.recv_timeout(grace);
+        self.buf.lock().map(|v| v.clone()).unwrap_or_default()
     }
 }
 
@@ -165,4 +213,56 @@ pub(crate) fn run_cli_list(program: &str, args: &[String]) -> Option<std::proces
     let mut command = std::process::Command::new(program);
     command.args(args);
     run_command_bounded(&mut command, CLI_LIST_TIMEOUT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A grandchild that inherited stdout keeps the pipe open long after the
+    /// direct child exits. Joining the drainers unconditionally turned this
+    /// into an unbounded wait — a "bounded" command that blocks on a
+    /// discovery subprocess's orphaned child. The wall-clock budget has to
+    /// cover draining, not just waiting on the child.
+    ///
+    /// The background `sleep` is what holds the pipe; the shell exits at once.
+    /// With the join this test takes 30s (the sleep). It must not.
+    #[test]
+    fn an_inherited_pipe_cannot_outlive_the_timeout() {
+        let mut command = std::process::Command::new("sh");
+        command.arg("-c").arg("sleep 30 & echo done");
+        let started = std::time::Instant::now();
+        let out = run_command_bounded(&mut command, std::time::Duration::from_secs(5));
+        let elapsed = started.elapsed();
+
+        let out = out.expect("the shell itself exits promptly, so this is not a timeout");
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "done");
+        assert!(
+            elapsed < std::time::Duration::from_secs(3),
+            "run_command_bounded returned after {elapsed:?} — it waited on a pipe \
+             held open by a grandchild instead of honoring its budget"
+        );
+    }
+
+    /// The regression above must not cost us real output: a drainer that
+    /// finishes normally is still collected in full.
+    #[test]
+    fn a_normal_drain_is_collected_in_full() {
+        let mut command = std::process::Command::new("sh");
+        command.arg("-c").arg("printf 'hello '; printf 'world'");
+        let out =
+            run_command_bounded(&mut command, std::time::Duration::from_secs(5)).expect("sh runs");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "hello world");
+    }
+
+    /// stderr is collected through the same channel path as stdout.
+    #[test]
+    fn stderr_is_collected_too() {
+        let mut command = std::process::Command::new("sh");
+        command.arg("-c").arg("printf oops 1>&2");
+        let out =
+            run_command_bounded(&mut command, std::time::Duration::from_secs(5)).expect("sh runs");
+        assert_eq!(String::from_utf8_lossy(&out.stderr), "oops");
+        assert!(out.stdout.is_empty());
+    }
 }

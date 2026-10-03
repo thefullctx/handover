@@ -457,9 +457,15 @@ export default function App() {
     );
     listen<{ id: string; stream: string; chunk: string }>("handoff:output", (e) => {
       if (stepRef.current !== "chat") return;
-      // Ignore chunks from a previous handoff (dismissed palette, retried
-      // send, or a second window): only the current handoff's stream appends.
-      if (handoffIdRef.current && e.payload.id !== handoffIdRef.current) return;
+      // Ignore chunks that do not belong to the current handoff (dismissed
+      // palette, retried send, or a second window). The comparison is
+      // deliberately unguarded: before this send's handoff:started arrives
+      // `handoffIdRef.current` is null, and `id !== null` rejects every
+      // chunk — including stragglers still streaming from a previous,
+      // still-running handoff. Guarding with `handoffIdRef.current &&`
+      // would disable the filter for exactly that window and splice old
+      // output into the new turn (and stamp its time-to-first-response).
+      if (e.payload.id !== handoffIdRef.current) return;
       let text = liveRef.current + e.payload.chunk;
       if (text.length > 500_000) text = text.slice(-500_000);
       liveRef.current = text;
@@ -571,8 +577,11 @@ export default function App() {
       liveRef.current = "";
       handoffIdRef.current = null;
       setLive("");
-      // Fresh activity measurements for this handoff.
+      // Fresh activity measurements for this handoff. promptBytes is reset
+      // too — until this send's handoff:started lands, the previous
+      // handoff's prompt size would otherwise be attributed to this one.
       setSendStartedAt(Date.now());
+      setPromptBytes(null);
       setFirstChunkAt(null);
       setLastChunkAt(null);
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
