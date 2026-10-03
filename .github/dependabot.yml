@@ -1,0 +1,27 @@
+# Without this, SHA-pinned actions silently stop receiving fixes: the pin
+# freezes the code and there is no signal when upstream moves. Dependabot
+# opens the PR that re-points each SHA, so pinning buys immutability without
+# costing patches.
+version: 2
+updates:
+  # Keeps the SHA pins in .github/workflows current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "ci"
+
+  # Cargo.lock is committed, so crate updates arrive as reviewable PRs
+  # instead of drifting until someone runs `cargo update`.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
