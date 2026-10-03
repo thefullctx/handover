@@ -17,6 +17,16 @@ cargo build -p handover-daemon -p handover-cli 2>&1 | tail -5
 
 TEST_HOME="$(mktemp -d)"
 export HOME="$TEST_HOME"
+# HOME alone is not enough to make this hermetic on Linux. `dirs::config_dir()`
+# honours XDG_CONFIG_HOME when it is set, and CI images commonly set it — which
+# would send config.toml and the api_token to the runner's REAL home while the
+# assertions below look for them under the throwaway one. macOS ignores XDG,
+# which is why this only ever failed on Linux. Pin every XDG location inside the
+# test home so the daemon and CLI resolve the same path regardless of the
+# environment the test runs in.
+export XDG_CONFIG_HOME="$TEST_HOME/.config"
+export XDG_DATA_HOME="$TEST_HOME/.local/share"
+export XDG_CACHE_HOME="$TEST_HOME/.cache"
 
 # Session-aware demo agent (Phase 6 coverage: sessions/attach/resume) driven
 # by the fake-agent harness — a script that OWNS a session dir and appends to
