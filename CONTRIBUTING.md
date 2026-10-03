@@ -50,7 +50,7 @@ scripts/              smoke-test.sh (end-to-end), verify.sh (full release matrix
 ```bash
 # Rust toolchain + npm deps
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-cd apps/desktop/ui && npm install && cd ../../..
+cd apps/desktop/ui && npm ci && cd ../../..
 
 # Build workspace (CLI, daemon, libraries)
 cargo build --workspace
