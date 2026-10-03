@@ -642,7 +642,10 @@ fn first_program_in_segment(segment: &str) -> Option<String> {
     }
     // `export FOO=1; hermes` / `unset FOO; hermes`: the statement launches
     // nothing — skip it and any assignments that follow in the same one.
-    if matches!(tokens.get(i).map(String::as_str), Some("export") | Some("unset")) {
+    if matches!(
+        tokens.get(i).map(String::as_str),
+        Some("export") | Some("unset")
+    ) {
         i += 1;
         while i < tokens.len() && is_leading_assignment(&tokens[i]) {
             i += 1;
@@ -709,8 +712,7 @@ fn is_leading_assignment(token: &str) -> bool {
     }
     match token.split_once('=') {
         Some((name, _)) => {
-            !name.is_empty()
-                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         }
         None => false,
     }
@@ -885,10 +887,7 @@ mod tests {
             first_program("/usr/local/bin/hermes -z \"{PROMPT}\"").as_deref(),
             Some("/usr/local/bin/hermes")
         );
-        assert_eq!(
-            first_program("sh -c 'tee /tmp/x'").as_deref(),
-            Some("tee")
-        );
+        assert_eq!(first_program("sh -c 'tee /tmp/x'").as_deref(), Some("tee"));
         assert_eq!(first_program("").as_deref(), None);
     }
 
@@ -897,7 +896,10 @@ mod tests {
         // Regression: `export FOO=1; <missing-binary> …` used to read as
         // `export` (always present) → wrongly "available". The export is now
         // skipped and the missing binary is what gets probed.
-        let agent = agent_with("export FOO=1; definitely-not-a-real-agent-xyz -z \"{PROMPT}\"", None);
+        let agent = agent_with(
+            "export FOO=1; definitely-not-a-real-agent-xyz -z \"{PROMPT}\"",
+            None,
+        );
         let status: AgentStatus = agent.detect().unwrap();
         assert!(!status.available, "{}", status.detail);
         assert!(status.detail.contains("definitely-not-a-real-agent-xyz"));
