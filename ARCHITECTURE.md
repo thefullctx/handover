@@ -161,7 +161,7 @@ in-session. Two deliberate design points:
   recommend." wrapped around a casual question made agents answer
   "I don't see any new context in your message" instead of conversationally.
 - **Transparency**: every turn shows the exact rendered prompt under an expandable
-  "Prompt that was sent" — nothing the agent receives is hidden.
+  "Prompt that was sent" disclosure — nothing the agent receives is hidden.
 
 Failures render in-thread; while a message is in flight the reply streams inline.
 
@@ -222,17 +222,23 @@ blocking thread pool so the palette stays responsive for multi-minute agents.
 
 The palette never blocks on an agent: the daemon streams every stdout/stderr chunk over a
 `handoff:output` event as it arrives, and a `handoff:started` event reports the rendered
-prompt's byte length the moment the send begins. The sending screen derives an
-**observable phase** from that stream — *Sending context* (no output yet) → *Agent
-responding* (chunks flowing) → *Wrapping up* (stream idle >3s, reverting if output
-resumes) — and shows it as an evolving status sentence plus a quiet phase timeline with
-real measurements (prompt size, time to first response, live output volume) inside a
-collapsible activity section. Escape dismisses the palette but never cancels a handoff in
-flight.
+prompt's byte length the moment the send begins. The chat view derives an **observable
+phase** from that stream — *Sending context* (no output yet) → *Agent responding* (chunks
+flowing) → *Wrapping up* (stream idle >3s, reverting if output resumes) — and renders it as
+a quiet phase timeline inside a collapsible **Show activity** section, next to real
+measurements: prompt size (measured in Rust), time to first response and output volume
+(measured from the event stream). Nothing here is estimated or animated on a timer; a stat
+that has not been observed yet renders as `—`, not `0`. The in-flight bubble shows a live
+elapsed timer and the streaming reply. Escape dismisses the palette but never cancels a
+handoff in flight.
 
-Completed handoffs land in an **outcome-first** result panel: success/failure, agent,
-duration, a human title, and the agent's answer as readable text, with raw stdout/stderr
-and the prompt tucked into expandable details. Errors are humanized with a Retry action.
+Every turn also carries a **"Prompt that was sent"** disclosure: the exact rendered prompt
+the agent received (which may differ from what was typed — a chat message goes through the
+`ask` template, a captured file adds context headers), not just the text in the bubble.
+
+Completed handoffs land in the same thread, outcome-first in shape — the agent's answer as
+readable text, raw stdout/stderr and the prompt in expandable details — and the full
+**result panel** (copy, follow-up, repeat, retry) is reachable from the history view.
 
 ### Session history
 
@@ -369,6 +375,21 @@ Prompt files for `{PROMPT_FILE}` live under a private cache directory (`…/hand
 mode `0600`, with RAII cleanup on every exit path. The location is overridable with
 `HANDOVER_PROMPT_CACHE_DIR` so the test suite can run in sandboxed / CI environments
 without touching the user's real cache.
+
+## Lock discipline
+
+One `Mutex<Daemon>` guards all mutable state, so the rule is simple and absolute: **never
+hold it across a filesystem walk, a subprocess, or an agent run.** Every slow path is split
+in two — take a cheap snapshot under the lock (`agents_status_snapshot`,
+`live_sessions_snapshot`, `resolve_send_plan`, `resolve_approval_plan`), drop the guard, then
+do the slow work (`compute_agents_status`, `compute_live_sessions`, `complete_send`,
+`complete_approval`, `execute_handoff`). Holding the lock across any of those would freeze
+`/health`, `/status`, the palette, and every handoff in flight.
+
+Access always goes through `SharedDaemon::lock()`, never `.0.lock().unwrap()`: a panic
+while the lock is held poisons it for the rest of the process, and since each HTTP request
+runs on its own thread that would turn one bad thread into a permanently broken API. The
+helper recovers the guard and logs the poisoning instead.
 
 ## Process model
 

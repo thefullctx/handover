@@ -55,8 +55,10 @@ cd apps/desktop/ui && npm install && cd ../../..
 # Build workspace (CLI, daemon, libraries)
 cargo build --workspace
 
-# Desktop UI (required before a release bundle, or when palette TS/CSS changes)
-cd apps/desktop/ui && npm run build && cd ../../..
+# Desktop app. `tauri build` / `tauri dev` run the UI build for you
+# (beforeBuildCommand / beforeDevCommand), so a separate `npm run build`
+# is only needed when you want the UI bundle without the Rust compile.
+cd apps/desktop && ./ui/node_modules/.bin/tauri dev
 ```
 
 macOS: `xcode-select --install`. Linux: install the
@@ -85,6 +87,12 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
 ```
 
 ## Development workflow
+
+0. **CI** — every push and PR runs the same matrix as `scripts/verify.sh`:
+   `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`,
+   `cargo test --workspace` (macOS + Linux), the UI lint/typecheck/tests/build,
+   and the end-to-end smoke test. See [.github/workflows/ci.yml](.github/workflows/ci.yml).
+   If you add a verification step, add it in both places.
 
 1. **Unit tests** — run the fast ones while iterating:
 
@@ -160,7 +168,9 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
 
    Or split terminals: Vite in `apps/desktop/ui`, `cargo run` in `apps/desktop/src-tauri`.
    Note: `beforeDevCommand` / `beforeBuildCommand` run from `apps/desktop` (the config's
-   parent directory) and use `cd ui && npm run …`.
+   parent directory), **not** from `apps/desktop/ui` — that is why they are written as
+   `npm --prefix ui run …`. A bare `npm run build` there walks up to the repo root and
+   fails with `ENOENT: no such file or directory, open '…/handover/package.json'`.
 
    Global hotkey: use `on_shortcut` only (it already registers). Never call
    `register()` for the same accelerator — Carbon rejects the duplicate.
@@ -183,8 +193,10 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
    - status dots are honest: a green light means the agent's process is actually running
      (or its session is actively writing), never just a leftover session file
    - action + agent selection shows a spinner while the agent runs (UI stays responsive)
-   - the palette stays open during the handoff with a live elapsed timer, then shows a
-     result panel with the agent's actual reply (Copy reply / Copy prompt / Close)
+   - the palette stays open during the handoff with a live elapsed timer and the reply
+     streaming inline; on completion the finished turn stays in the thread (you can keep
+     chatting), and the full result panel (Copy answer / Copy prompt / Close) opens from
+     *Recent handoffs*
    - tray menu → *Recent Handoffs* lists the last 10 handoffs; clicking a row reopens that
      result in the palette (matches by stable handoff id, not position)
    - handoff completes with a notification; on macOS the banner belongs to Handover

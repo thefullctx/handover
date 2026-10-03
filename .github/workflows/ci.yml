@@ -1,0 +1,102 @@
+name: CI
+
+# The release gate for Handover: fmt, clippy, the full Rust test suite, the UI
+# lint/typecheck/tests, and the end-to-end smoke test. This mirrors
+# scripts/verify.sh, which remains the single local entry point — if you add a
+# step there, add it here too.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push supersedes an in-flight run for the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep the suite hermetic: the prompt temp-cache dir must never land in the
+  # runner's real cache (see CONTRIBUTING.md).
+  HANDOVER_PROMPT_CACHE_DIR: ${{ github.workspace }}/.ci-prompt-cache
+
+jobs:
+  rust:
+    name: Rust (fmt, clippy, tests)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The desktop app is macOS/Linux only (tray, hotkey, pgrep, tty
+        # approval); the libraries and daemon build anywhere.
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the version; rustup fetches it automatically.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --check
+
+      # Warning-free across the workspace, including test targets.
+      - name: cargo clippy
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace
+
+  ui:
+    name: UI (lint, typecheck, tests, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop/ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          # No package-lock.json is committed yet, so `npm install` (not
+          # `npm ci`). Commit the lockfile and switch to `npm ci` for
+          # reproducible installs.
+          cache-dependency-path: apps/desktop/ui/package.json
+
+      - run: npm install
+
+      - name: eslint
+        run: npm run lint
+
+      - name: vitest
+        run: npx vitest run
+
+      # tsc + vite: the bundle the Tauri app ships.
+      - name: build
+        run: npm run build
+
+  smoke:
+    name: End-to-end smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+
+      - uses: Swatinem/rust-cache@v2
+
+      # daemon -> local HTTP API -> CLI -> demo agent, end to end, against a
+      # throwaway HOME.
+      - name: smoke test
+        run: ./scripts/smoke-test.sh

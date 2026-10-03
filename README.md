@@ -58,12 +58,18 @@ the live-process check and approval injection are Unix-specific.
 # Core, daemon, and CLI
 cargo build --workspace
 
-# Desktop app (Tauri): builds the React UI, then the app
-cargo build -p handover-desktop
+# Desktop app (Tauri). This builds the React UI first, then compiles the app.
+cd apps/desktop && ./ui/node_modules/.bin/tauri build
 ```
 
 The CLI lands at `target/debug/handover`, the daemon at `target/debug/handover-daemon`,
-and the desktop app at `target/debug/handover-desktop`.
+and the desktop app at `target/debug/handover-desktop` (release builds at
+`target/release/`, with the macOS bundle at
+`target/release/bundle/macos/Handover.app`).
+
+> `cargo build -p handover-desktop` on its own compiles only the Rust side. It does
+> **not** rebuild the UI, so it will happily bundle a stale `dist/`. Use
+> `tauri build` (or `tauri dev`) for anything that should pick up UI changes.
 
 ### Run
 
@@ -116,19 +122,23 @@ through: `⌘⇧A → Enter → Enter`.
 
 You are never left wondering what happened after the handoff:
 
-- **Sending** — the palette shows a calm status sentence that evolves with the handoff:
-  `Sending context to Hermes…` → `Hermes is investigating the issue.` → `Hermes is finishing up…`,
-  with the animated blue bridge and a quiet elapsed timer. Press `esc` to dismiss — the handoff
-  keeps running and a **native macOS notification** still fires on completion (the banner belongs
-  to Handover; clicking it activates the app, not Script Editor).
+- **Sending** — the in-flight turn shows a quiet thinking animation and a live elapsed timer
+  (`Codex is working · 12s`), with the reply streaming inline as it arrives. Press `esc` to dismiss
+  the palette — the handoff keeps running and a **native macOS notification** still fires on
+  completion (the banner belongs to Handover; clicking it activates the app, not Script Editor).
 - **Activity** — a collapsible **Show activity** section holds the raw agent output plus a phase
   timeline (Sending context → Agent responding → Wrapping up) and real measurements: the rendered
-  **prompt size**, **time to first response**, and live **output volume**.
-- **Completed** — the result panel leads with the outcome: success/failure, agent, duration, and
-  a human title (e.g. "Investigation complete"), then the agent's **answer** as readable text.
-  Buttons: **Copy answer · Copy prompt · Send follow-up · Repeat with another agent · Close**.
-  Raw stdout/stderr and the prompt stay in expandable details. Errors are plain-language and
-  offer **Retry** — never raw stack traces.
+  **prompt size**, **time to first response**, and live **output volume**. The phase is *derived
+  from the output stream*, not guessed: no output yet is "Sending context", flowing output is
+  "Agent responding", and output that goes quiet for 3s is "Wrapping up" — reverting the moment
+  output resumes, so a slow agent never looks finished. Every number is measured (prompt bytes in
+  Rust, response/output timings from the event stream); nothing is estimated.
+- **Completed** — the turn stays in the thread: the outcome (success/failure, agent, duration,
+  human title) with the agent's **answer** as readable text, and raw stdout/stderr behind a
+  disclosure. You can keep chatting in the same thread instead of starting over. The full
+  **result panel** (Copy answer · Copy prompt · Send follow-up · Repeat with another agent ·
+  Close) is one click away from *Recent handoffs*. Errors are plain-language and offer
+  **Retry** — never raw stack traces.
 - **Recent handoffs** — the tray/menu-bar menu has a *Recent Handoffs* submenu (most recent 10,
   session-only), and the palette's history view groups entries by **Today / Yesterday** with
   per-row **open · retry · duplicate · copy result · send to another agent**, plus a **Clear
@@ -432,7 +442,10 @@ Implemented and verified end-to-end:
 - ✅ Generic command agent adapter (`{PROMPT}`, `{PROMPT_FILE}`, stdin) + registry
 - ✅ Concurrent agent stdout/stderr drain, output caps, process-group timeout (Unix)
 - ✅ Chat delivers messages verbatim into the resumed session (`ask` template, no preamble) — the composer opens clean, dropped text/files pre-fill it, and nothing sends without an explicit `Enter`
-- ✅ Live handoff feedback: observable phases (sending context → agent responding → wrapping up), evolving status sentence, collapsible activity with prompt-size / first-response / output stats, outcome-first result panel (copy, follow-up, repeat, retry)
+- ✅ Live handoff feedback: stream-derived phase timeline (sending context → agent responding →
+  wrapping up), collapsible activity with prompt-size / first-response / output stats, per-turn
+  "Prompt that was sent" disclosure, completions that stay in the thread, with the full result
+  panel (copy, follow-up, repeat, retry) one click from Recent handoffs
 - ✅ First-run onboarding (teach by doing — the hotkey press dismisses it) with a "pick your
   assistants" step (detected agents, one-tap add) and a `?` keyboard cheat sheet
 - ✅ Drag-and-drop capture (text, text files, images by path) via DOM events + native `tauri://drag-*` file events
@@ -460,9 +473,9 @@ Implemented and verified end-to-end:
   `session_id` on every message), messages delivered verbatim (no action preamble — the
   exact text you type is exactly what the agent receives), inline streaming + per-turn
   "Prompt that was sent" transparency
-- ✅ 191 Rust unit tests + 62 Vitest/Testing Library tests covering the keyboard-first flows
-  and the session/approval/chat layers; `cargo clippy --workspace --all-targets` is
-  warning-free
+- ✅ 199 Rust unit tests + 66 Vitest/Testing Library tests covering the keyboard-first flows
+  and the session/approval/chat/activity layers; `cargo clippy --workspace --all-targets` is
+  warning-free (enforced in CI — see [.github/workflows/ci.yml](.github/workflows/ci.yml))
 - ✅ Production Content Security Policy (never disabled); prompt temp-cache dir overridable with `HANDOVER_PROMPT_CACHE_DIR` for sandboxed CI
 
 Planned next: screenshot capture, OpenAI-compatible agent adapter, frontmost-app
