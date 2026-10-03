@@ -85,9 +85,9 @@ Messages:       10 (5 user, 0 tool calls)`;
   it("cleans workspace notice + empty reasoning box + multi-line answer", () => {
     // Real capture: workspace notice, then an EMPTY reasoning box header
     // (quiet mode prints it without a closing border), then the answer.
-    const raw = `↪ restored workspace dir: /Users/user/Projects/handover\n\r\n┌─ Reasoning ──────────────────────────────────────────────────────────────────┐\r\n\r\n\r\nWe are currently in a new session. Our most recent previous sessions were:\n\n* \`@session:default/20260814_165704_47d106\` (Title: "Repeat TST #4")\n* \`@session:default/20260814_165546_777925\` (Title: "Repeat TST #2")\n* \`@session:default/20260814_165633_8c90b7\` (Title: "List three planets")\n`;
+    const raw = `↪ restored workspace dir: /Users/user/Projects/handover\n\r\n┌─ Reasoning ──────────────────────────────────────────────────────────────────┐\r\n\r\n\r\nWe are currently in a new session. Our most recent previous sessions were:\n\n* \`@session:default/20260814_165704_47d106\` (Title: "Follow-up check")\n* \`@session:default/20260814_165546_777925\` (Title: "Follow-up check")\n* \`@session:default/20260814_165633_8c90b7\` (Title: "Docs pass")\n`;
     expect(cleanReply(raw)).toBe(
-      "We are currently in a new session. Our most recent previous sessions were:\n\n* `@session:default/20260814_165704_47d106` (Title: \"Repeat TST #4\")\n* `@session:default/20260814_165546_777925` (Title: \"Repeat TST #2\")\n* `@session:default/20260814_165633_8c90b7` (Title: \"List three planets\")"
+      "We are currently in a new session. Our most recent previous sessions were:\n\n* `@session:default/20260814_165704_47d106` (Title: \"Follow-up check\")\n* `@session:default/20260814_165546_777925` (Title: \"Follow-up check\")\n* `@session:default/20260814_165633_8c90b7` (Title: \"Docs pass\")"
     );
   });
 
@@ -104,7 +104,7 @@ describe("filterLiveStream — banner noise never reaches the streaming bubble",
   });
 
   it("keeps genuine reply text and drops banners around it", () => {
-    const raw = `↪ restored workspace dir: /Users/user\n↻ Resumed session abc "t" (1 user messages, 2 total messages)\nModel restored from session: mtplx-qwen38-27b-optimized-quality\nWorking on it — found the bug.\nFix incoming.`;
+    const raw = `↪ restored workspace dir: /Users/user\n↻ Resumed session abc "t" (1 user messages, 2 total messages)\nModel restored from session: local-model-v2\nWorking on it — found the bug.\nFix incoming.`;
     expect(filterLiveStream(raw)).toBe("Working on it — found the bug.\nFix incoming.");
   });
 
