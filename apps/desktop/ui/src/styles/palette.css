@@ -2462,3 +2462,186 @@
   font-size: 11px;
   white-space: nowrap;
 }
+
+/* ---------------------------------------------------------------------
+   Per-turn disclosure ("Prompt that was sent" / raw agent output).
+   Collapsed by default: the thread stays a conversation, and the exact
+   bytes handed to the agent are one click away.
+   --------------------------------------------------------------------- */
+.chat-details {
+  margin-top: 6px;
+  font-size: 11.5px;
+}
+
+.chat-details > summary {
+  cursor: pointer;
+  color: var(--text-tertiary);
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.chat-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-details > summary::before {
+  content: "›";
+  display: inline-block;
+  font-size: 13px;
+  line-height: 1;
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.chat-details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.chat-details > summary:hover {
+  color: var(--text-secondary);
+}
+
+.chat-details pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* ---------------------------------------------------------------------
+   "Show activity" — the handoff's observable phase plus the real
+   measurements behind it (prompt size, time to first response, output
+   volume). Collapsed: it is evidence, not the main event.
+   --------------------------------------------------------------------- */
+.chat-activity {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-2);
+}
+
+.chat-activity > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: var(--r-pill);
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  transition: color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+.chat-activity > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-activity > summary:hover {
+  color: var(--text-secondary);
+  background: var(--surface-2);
+}
+
+.activity-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 4px 0;
+}
+
+/* The phase timeline. Only the step the stream is actually in is lit —
+   the others stay quiet, so the row reads as a position, not decoration. */
+.activity-phases {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.activity-phase::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.activity-phase.done::before {
+  background: var(--text-tertiary);
+}
+
+.activity-phase.active {
+  color: var(--text-primary);
+}
+
+.activity-phase.active::before {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Connector between timeline steps. */
+.activity-phase + .activity-phase::after {
+  content: none;
+}
+
+.activity-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.activity-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-stat-label {
+  color: var(--text-tertiary);
+}
+
+.activity-output {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 160px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../Icons";
-import { captureSnippet, cleanReply, failureMessage, fmtDuration, filterLiveStream, sessionTimeLabel, truncate } from "../lib/format";
-import type { AgentMeta, ApprovalResult, ChatTurn, LiveSession } from "../lib/types";
+import { captureSnippet, cleanReply, failureMessage, fmtBytes, fmtDuration, fmtMs, filterLiveStream, PHASE_STEPS, phaseIndex, sessionTimeLabel, truncate } from "../lib/format";
+import type { AgentMeta, ApprovalResult, ChatTurn, HandoffActivity, LiveSession } from "../lib/types";
 import ApprovalCard from "./ApprovalCard";
 
 interface Props {
@@ -20,6 +20,10 @@ interface Props {
   /** Streamed agent output while a message is in flight. */
   liveText: string;
   elapsed: number;
+  /** Real measurements for the collapsible "Show activity" section (phase
+   *  timeline, prompt size, time to first response, output volume). `null`
+   *  when there is nothing to show yet. */
+  activity?: HandoffActivity | null;
   /** Composer prefill (captured clipboard / dropped context). Re-applied
    *  whenever `draftSignal` changes. */
   draft?: string;
@@ -47,6 +51,7 @@ export default function ChatView({
   sendingText,
   liveText,
   elapsed,
+  activity = null,
   draft,
   draftSignal = 0,
   onApprove,
@@ -113,6 +118,15 @@ export default function ChatView({
                 <div className="chat-bubble user">
                   <span className="chat-meta">You</span>
                   <span className="chat-text">{truncate(mine, 8000) || "—"}</span>
+                  {/* Transparency: the exact prompt the agent received —
+                      not what you typed, which may have been wrapped by an
+                      action template. Nothing sent is ever hidden. */}
+                  {turn.outcome.prompt && (
+                    <details className="chat-details">
+                      <summary>Prompt that was sent</summary>
+                      <pre className="prompt">{truncate(turn.outcome.prompt, 8000)}</pre>
+                    </details>
+                  )}
                 </div>
               </div>
               <div className="chat-row agent">
@@ -193,6 +207,58 @@ export default function ChatView({
           </div>
         )}
       </div>
+
+      {activity && (
+        <details className="chat-activity" data-testid="chat-activity">
+          <summary>
+            <Icon name="activity" size={12} />
+            Show activity
+          </summary>
+          <div className="activity-body">
+            {/* Phase timeline — the current phase is derived from the output
+                stream in App.tsx, never animated on a timer. */}
+            <ol className="activity-phases" data-testid="activity-phases">
+              {PHASE_STEPS.map((step) => {
+                const active = phaseIndex(activity.phase) === PHASE_STEPS.indexOf(step);
+                const done =
+                  activity.phase === "done" || phaseIndex(activity.phase) > PHASE_STEPS.indexOf(step);
+                return (
+                  <li
+                    key={step.id}
+                    className={`activity-phase${active ? " active" : ""}${done ? " done" : ""}`}
+                    data-active={active ? "true" : "false"}
+                  >
+                    {step.label}
+                  </li>
+                );
+              })}
+            </ol>
+            <div className="activity-stats">
+              <span className="activity-stat">
+                <span className="activity-stat-label">Prompt</span>
+                <span data-testid="stat-prompt-size">
+                  {activity.promptBytes === null ? "—" : fmtBytes(activity.promptBytes)}
+                </span>
+              </span>
+              <span className="activity-stat">
+                <span className="activity-stat-label">First response</span>
+                <span data-testid="stat-first-response">
+                  {activity.firstResponseMs === null ? "—" : fmtMs(activity.firstResponseMs)}
+                </span>
+              </span>
+              <span className="activity-stat">
+                <span className="activity-stat-label">Output</span>
+                <span data-testid="stat-output-volume">{fmtBytes(activity.outputBytes)}</span>
+              </span>
+            </div>
+            {activity.output.trim() && (
+              <pre className="activity-output" data-testid="activity-output">
+                {truncate(activity.output, 4000)}
+              </pre>
+            )}
+          </div>
+        </details>
+      )}
 
       <div className="followup-composer">
         <textarea

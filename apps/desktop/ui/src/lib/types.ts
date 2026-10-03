@@ -174,6 +174,29 @@ export interface ChatTurn {
   outcome: SendOutcome;
 }
 
+/**
+ * Observable phase of the handoff in flight, derived from the output stream
+ * (never guessed): no output yet → `sending`, output flowing → `responding`,
+ * output idle for a moment → `wrapping`, finished → `done`.
+ */
+export type HandoffPhase = "sending" | "responding" | "wrapping" | "done";
+
+/** Everything the palette's "Show activity" section renders. All values are
+ *  real measurements from the daemon or the event stream — the UI never
+ *  estimates them. `null` means "not measured yet", not zero. */
+export interface HandoffActivity {
+  phase: HandoffPhase;
+  /** Byte length of the rendered prompt, reported by `handoff:started`. */
+  promptBytes: number | null;
+  /** Milliseconds from send start to the first byte of agent output. */
+  firstResponseMs: number | null;
+  /** Bytes of agent output seen so far (live while sending, the receipt's
+   *  stdout+stderr once the handoff completes). */
+  outputBytes: number;
+  /** The raw agent output behind `outputBytes`, shown in full. */
+  output: string;
+}
+
 export interface AppInfo {
   version: string;
   config_path: string;

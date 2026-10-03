@@ -1,9 +1,45 @@
-import type { Capture, ContentKind, LiveSession, SendOutcome } from "./types";
+import type {
+  Capture,
+  ContentKind,
+  HandoffPhase,
+  LiveSession,
+  SendOutcome,
+} from "./types";
 
 /** `0:45`-style duration. */
 export function fmtDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000));
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/** Sub-second-friendly duration for the activity stats: `820 ms` / `2.4 s`.
+ *  `fmtDuration` rounds to whole seconds, which reads as `0:00` for a fast
+ *  agent — exactly the number the user most wants to compare. */
+export function fmtMs(ms: number): string {
+  if (ms < 1000) return `${Math.max(0, Math.round(ms))} ms`;
+  return `${(ms / 1000).toFixed(1)} s`;
+}
+
+/**
+ * UTF-8 byte length of a string. NOT `String.length`, which counts UTF-16 code
+ * units — the activity stats report bytes so they agree with the `prompt_len`
+ * the daemon measures in Rust.
+ */
+export function byteLength(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
+/** The handoff phase timeline, in order. The activity section renders these
+ *  as steps and highlights the one the stream is actually in. */
+export const PHASE_STEPS: { id: HandoffPhase; label: string }[] = [
+  { id: "sending", label: "Sending context" },
+  { id: "responding", label: "Agent responding" },
+  { id: "wrapping", label: "Wrapping up" },
+];
+
+/** Index of the active phase in [`PHASE_STEPS`]; `-1` once done. */
+export function phaseIndex(phase: HandoffPhase): number {
+  return PHASE_STEPS.findIndex((s) => s.id === phase);
 }
 
 /** Compact byte count for the sending stats: `512 B` / `4.1 KB` / `1.2 MB`. */

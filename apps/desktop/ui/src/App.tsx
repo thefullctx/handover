@@ -7,7 +7,7 @@ import HistoryList from "./components/HistoryList";
 import ResultPanel from "./components/ResultPanel";
 import ShortcutSheet from "./components/ShortcutSheet";
 import WelcomeOverlay from "./components/WelcomeOverlay";
-import { captureSnippet, failureMessage, fmtDuration, formatShortcut, replySnippet, truncate } from "./lib/format";
+import { captureSnippet, byteLength, failureMessage, fmtDuration, formatShortcut, replySnippet, truncate } from "./lib/format";
 import {
   approveSession,
   clearHistory,
@@ -32,6 +32,8 @@ import type {
   ChatTurn,
   DroppedFile,
   GalleryAgent,
+  HandoffActivity,
+  HandoffPhase,
   LiveSession,
   PalettePayload,
   PaletteStep,
@@ -54,6 +56,11 @@ const ASK_ACTION: Action = {
  *  so tests can drive the clock precisely. */
 export const STATUS_POLL_MS = 4000;
 
+/** Output idle for this long and the handoff reads as "Wrapping up". The
+ *  phase reverts to "Agent responding" the instant output resumes, so a slow
+ *  agent that pauses mid-thought never looks finished. */
+const WRAPPING_IDLE_MS = 3000;
+
 export default function App() {
   const [step, setStep] = useState<PaletteStep>("loading");
   const [payload, setPayload] = useState<PalettePayload | null>(null);
@@ -66,6 +73,17 @@ export default function App() {
   const [recentIds, setRecentIds] = useState<string[]>([]);
   /** Live-streamed agent output while sending. */
   const [live, setLive] = useState("");
+  /** Byte length of the rendered prompt, straight from `handoff:started` —
+   *  a real measurement from Rust, never re-derived in the UI. */
+  const [promptBytes, setPromptBytes] = useState<number | null>(null);
+  /** Wall-clock stamps behind the activity section: when the send began, and
+   *  when agent output first arrived / last arrived. */
+  const [sendStartedAt, setSendStartedAt] = useState<number | null>(null);
+  const [firstChunkAt, setFirstChunkAt] = useState<number | null>(null);
+  const [lastChunkAt, setLastChunkAt] = useState<number | null>(null);
+  /** Ticks while the chat is open so the elapsed timer AND the phase
+   *  derivation (idle > WRAPPING_IDLE_MS) stay live. */
+  const [now, setNow] = useState(() => Date.now());
   /** Live chat thread (a conversation, not one reply) — turns append in
    *  place and every message explicitly resumes the same session. */
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
@@ -176,6 +194,10 @@ export default function App() {
       setDropError("");
       setApprovingAgent(null);
       setApprovalNote(null);
+      setPromptBytes(null);
+      setSendStartedAt(null);
+      setFirstChunkAt(null);
+      setLastChunkAt(null);
       setChatTurns([]);
       setChatSessionId(null);
       setChatAgent(null);
@@ -246,7 +268,9 @@ export default function App() {
     void hidePalette();
   }, []);
 
-  // Live elapsed timer while a handoff is running.
+  // Live elapsed timer while a handoff is running. The same tick also drives
+  // `now`, which is what lets the activity phase notice that output has gone
+  // quiet (wrapping up) without its own timer.
   useEffect(() => {
     if (step !== "chat") {
       setElapsed(0);
@@ -255,6 +279,7 @@ export default function App() {
     const started = Date.now();
     const id = window.setInterval(() => {
       setElapsed(Math.floor((Date.now() - started) / 1000));
+      setNow(Date.now());
     }, 500);
     return () => window.clearInterval(id);
   }, [step]);
@@ -439,12 +464,21 @@ export default function App() {
       if (text.length > 500_000) text = text.slice(-500_000);
       liveRef.current = text;
       setLive(text);
+      // Activity stamps: first output drives "time to first response", the
+      // latest one drives the wrapping-up phase. Both are real observations
+      // of the stream, not estimates.
+      const at = Date.now();
+      setFirstChunkAt((prev) => (prev === null ? at : prev));
+      setLastChunkAt(at);
     }).then((fn) => unlisteners.push(fn));
     // The daemon emits the stable handoff id + rendered prompt size as soon
     // as the send starts. The id correlates streamed `handoff:output` chunks
     // with this send (see above); prompt_len is a real measurement for stats.
     listen<{ id: string; prompt_len: number }>("handoff:started", (e) => {
       handoffIdRef.current = e.payload.id;
+      // The rendered prompt's byte size, measured in Rust. This is the "prompt
+      // size" stat in the activity section.
+      setPromptBytes(e.payload.prompt_len);
     }).then((fn) => unlisteners.push(fn));
     // External file drags: WKWebView blocks dataTransfer.files, so Tauri
     // forwards the drop paths through these native events. Text drags come
@@ -537,6 +571,10 @@ export default function App() {
       liveRef.current = "";
       handoffIdRef.current = null;
       setLive("");
+      // Fresh activity measurements for this handoff.
+      setSendStartedAt(Date.now());
+      setFirstChunkAt(null);
+      setLastChunkAt(null);
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
 
       /** A failed exchange still lands in the thread — the user sees the
@@ -842,11 +880,57 @@ export default function App() {
 
   const copyReply = useCallback(() => {
     if (outcome?.receipt?.stdout) copyText_(outcome.receipt.stdout);
-  }, [outcome, copyText_]);
+  }, [outcome, copyText_]);// -------------------------------------------------------------------------
+// Render
+// -------------------------------------------------------------------------
 
-  // -------------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------------
+  /**
+   * The "Show activity" payload — real measurements only. The phase is
+   * derived from the output stream (never guessed): no output yet →
+   * "Sending context", output flowing → "Agent responding", output idle past
+   * {@link WRAPPING_IDLE_MS} → "Wrapping up" (and straight back if output
+   * resumes). Output volume is the live stream while sending, and the
+   * receipt's stdout+stderr once the handoff completed.
+   */
+  const activity: HandoffActivity | null = useMemo(() => {
+    const sending = chatPendingText !== null;
+    if (!sending && chatTurns.length === 0) return null;
+    const phase: HandoffPhase = !sending
+      ? "done"
+      : lastChunkAt === null
+        ? "sending"
+        : now - lastChunkAt > WRAPPING_IDLE_MS
+          ? "wrapping"
+          : "responding";
+    const output = sending
+      ? live
+      : [
+          outcome?.receipt?.stdout ?? "",
+          outcome?.receipt?.stderr ?? "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+    return {
+      phase,
+      promptBytes,
+      firstResponseMs:
+        sendStartedAt !== null && firstChunkAt !== null
+          ? Math.max(0, firstChunkAt - sendStartedAt)
+          : null,
+      outputBytes: byteLength(output),
+      output,
+    };
+  }, [
+    chatPendingText,
+    chatTurns.length,
+    live,
+    outcome,
+    lastChunkAt,
+    now,
+    promptBytes,
+    sendStartedAt,
+    firstChunkAt,
+  ]);
 
   const chatLiveSession = chatAgent ? sessionsByAgent.get(chatAgent.id) ?? null : null;
 
@@ -1034,6 +1118,7 @@ export default function App() {
                   sendingText={chatPendingText}
                   liveText={live}
                   elapsed={elapsed}
+                  activity={activity}
                   draft={draft}
                   draftSignal={draftSignal}
                   onApprove={

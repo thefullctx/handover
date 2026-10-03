@@ -432,7 +432,7 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     );
     // The reply lands in the thread.
     await waitFor(() =>
-      expect(screen.getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
+      expect(within(screen.getByTestId("chat-thread")).getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
     );
   });
 
@@ -460,7 +460,7 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
 
     // The adopted session anchors follow-ups explicitly.
     await waitFor(() =>
-      expect(screen.getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
+      expect(within(screen.getByTestId("chat-thread")).getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
     );
     await user.click(composer);
     await user.keyboard("and then?");
@@ -477,7 +477,7 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     await user.keyboard("what's next");
     await user.keyboard("{Enter}");
     await waitFor(() =>
-      expect(screen.getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
+      expect(within(screen.getByTestId("chat-thread")).getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
     );
     // makeOutcome's receipt duration_ms = 45000 → "0:45".
     expect(screen.getByText("0:45")).toBeInTheDocument();
@@ -543,7 +543,7 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     await user.keyboard("first conversation");
     await user.keyboard("{Enter}");
     await waitFor(() =>
-      expect(screen.getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
+      expect(within(screen.getByTestId("chat-thread")).getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
     );
 
     // Pick another agent — same surface, fresh thread.
@@ -551,7 +551,107 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     await user.click(screen.getByRole("option", { name: /Hermes/ }));
     await waitFor(() => expect(screen.getByTestId("chat")).toBeInTheDocument());
     expect(screen.getByText(/Say hello to Hermes/)).toBeInTheDocument();
-    expect(screen.queryByText(/Fixed the panic/)).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("chat-thread")).queryByText(/Fixed the panic/)).not.toBeInTheDocument();
+  });
+});
+
+describe("palette — handoff activity (real measurements, no guessing)", () => {
+  /** Starts a chat and returns with a message in flight. */
+  async function sendPending(user: ReturnType<typeof userEvent.setup>) {
+    await chooseAgent(user, /Codex/);
+    const composer = screen.getByLabelText("Chat message");
+    await user.click(composer);
+    await user.keyboard("what's next");
+    await user.keyboard("{Enter}");
+    await screen.findByTestId("chat-inflight");
+  }
+
+  it("shows the daemon-measured prompt size and an unmeasured first-response stat", async () => {
+    const pending = deferred<unknown>();
+    const user = await renderApp(makePayload(), [], { send_handoff: pending.promise });
+    await sendPending(user);
+
+    // The daemon reports the rendered prompt's byte size — the UI never
+    // re-derives it, it just shows the number Rust measured.
+    tauri.listeners["handoff:started"]({ payload: { id: "handoff-9", prompt_len: 2048 } });
+    const activity = await screen.findByTestId("chat-activity");
+    await waitFor(() =>
+      expect(screen.getByTestId("stat-prompt-size")).toHaveTextContent("2.0 KB")
+    );
+    // Nothing has come back yet — "not measured", not a fake zero.
+    expect(screen.getByTestId("stat-first-response")).toHaveTextContent("—");
+    // The phase starts at "Sending context" (no output observed yet).
+    expect(within(activity).getByText("Sending context")).toHaveAttribute("data-active", "true");
+    expect(within(activity).getByText("Agent responding")).toHaveAttribute("data-active", "false");
+
+    pending.resolve(makeOutcome());
+    await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
+  });
+
+  it("advances the phase and records first-response time from the output stream", async () => {
+    const pending = deferred<unknown>();
+    const user = await renderApp(makePayload(), [], { send_handoff: pending.promise });
+    await sendPending(user);
+    tauri.listeners["handoff:started"]({ payload: { id: "handoff-9", prompt_len: 512 } });
+
+    // Output arrives → the phase is "Agent responding" and the time to first
+    // response becomes a real measurement.
+    tauri.listeners["handoff:output"]({
+      payload: { id: "handoff-9", stream: "stdout", chunk: "Working through it" },
+    });
+    await waitFor(() =>
+      expect(screen.getByText("Agent responding")).toHaveAttribute("data-active", "true")
+    );
+    expect(screen.getByTestId("stat-first-response")).not.toHaveTextContent("—");
+    // Output volume grows with the stream (18 bytes of real text).
+    expect(screen.getByTestId("stat-output-volume")).toHaveTextContent("18 B");
+    expect(screen.getByTestId("activity-output")).toHaveTextContent("Working through it");
+
+    pending.resolve(makeOutcome());
+    await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
+    // Finished: every timeline step is behind us, none is "active".
+    const steps = screen.getByTestId("activity-phases");
+    expect(steps.querySelectorAll('[data-active="true"]')).toHaveLength(0);
+    expect(screen.getAllByText(/Wrapping up/).length).toBeGreaterThan(0);
+  });
+
+  it("reports the completed handoff's receipt output as the output volume", async () => {
+    const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
+    await chooseAgent(user, /Codex/);
+    const composer = screen.getByLabelText("Chat message");
+    await user.click(composer);
+    await user.keyboard("what's next");
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(within(screen.getByTestId("chat-thread")).getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
+    );
+    // The receipt's stdout is the evidence, and its byte length is the stat.
+    const activity = screen.getByTestId("chat-activity");
+    expect(within(activity).getByText(/Fixed the panic/)).toBeInTheDocument();
+    expect(screen.getByTestId("stat-output-volume")).toHaveTextContent(/B|KB/);
+  });
+
+  it("shows the exact prompt sent, not just what was typed", async () => {
+    const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
+    await chooseAgent(user, /Codex/);
+    const composer = screen.getByLabelText("Chat message");
+    await user.click(composer);
+    await user.keyboard("what's next");
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(within(screen.getByTestId("chat-thread")).getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
+    );
+
+    // Transparency: the rendered prompt the agent received is one click away.
+    const details = screen.getByText("Prompt that was sent").closest("details");
+    expect(details).not.toBeNull();
+    // The bubble itself shows the capture; the disclosure shows what the agent
+    // ACTUALLY got (the capture wrapped by the action template).
+    const bubble = screen.getByText("Prompt that was sent").closest(".chat-bubble.user");
+    expect(bubble).toHaveTextContent("panic: something exploded");
+    expect(details!.querySelector("pre")).toHaveTextContent(
+      "Investigate this issue and fix it. Context: panic: something exploded"
+    );
   });
 });
 
