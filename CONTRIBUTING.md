@@ -279,6 +279,15 @@ which also raised the floor to Node 22.12. If a future major does the same,
 weigh it the same way: a dev-only advisory in a code path the repo does not use
 is not worth an unbounded migration, but it should be a decision, not a drift.
 
+For Rust, Dependabot tracks RustSec and opens the upgrade PR — see
+`.github/dependabot.yml`. One advisory is currently open with **no upstream fix
+available**, so it cannot be closed by a version bump:
+
+- `GHSA-wrw7-89jp-8q8g` (medium) — unsoundness in `glib::VariantStrIter`.
+  `glib` 0.18.5 arrives transitively through Tauri, and Handover does not use
+  `VariantStrIter`; there is no patched release to move to. Dependabot will
+  raise it when upstream ships one.
+
 ## Coding style
 
 - Follow the existing layout: pure logic in `core`, orchestration in `daemon`, platform in
