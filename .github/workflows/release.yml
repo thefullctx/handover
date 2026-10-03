@@ -151,11 +151,13 @@ jobs:
             echo "The release job asserts the binary is universal before publishing."
             echo "To check locally:"
             echo
+            # Single-quoted throughout: a backtick inside double quotes opens a
+            # command substitution, so "```" would not even parse.
             echo '```'
-            echo "lipo -archs Handover.app/Contents/MacOS/handover-desktop"
-            echo "```"
+            echo 'lipo -archs Handover.app/Contents/MacOS/handover-desktop'
+            echo '```'
             echo
-            echo "should print \`x86_64 arm64\`."
+            echo 'should print `x86_64 arm64`.'
           } > "$NOTES"
           if gh release view "$TAG" >/dev/null 2>&1; then
             # Re-run: replace the asset rather than failing on a duplicate.
