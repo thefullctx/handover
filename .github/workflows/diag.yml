@@ -9,32 +9,32 @@ jobs:
   diag:
     runs-on: ubuntu-26.04
     steps:
-      - name: Replicate the process probe
+      - name: Find a portable probe
         run: |
-          set -x
-          PROBE="/tmp/ho-probe-550e8400-e29b-41d4-a716-446655440000"
-          cp /bin/sleep "$PROBE"
-          "$PROBE" 30 &
-          PID=$!
-          sleep 1
-          echo "PID=$PID"
-          echo "--- procps version ---"
-          pgrep --version 2>&1 | head -2
-          echo "--- pgrep -x full name ---"
-          pgrep -x "$PROBE"; echo "exit=$?"
-          echo "--- pgrep -x basename ---"
-          pgrep -x "ho-probe-550e8400-e29b-41d4-a716-446655440000"; echo "exit=$?"
-          echo "--- comm (truncated?) ---"
-          cat "/proc/$PID/comm" 2>&1
-          echo "--- ps -axo command= (first 5 lines) ---"
-          ps -axo command= 2>&1 | head -5
-          echo "--- does the probe appear in ps? ---"
-          ps -axo command= 2>&1 | grep -c "$PROBE" || echo "NOT FOUND in ps"
-          echo "--- does the basename appear as a component? ---"
-          ps -axo command= 2>&1 | grep -c "ho-probe-550e8400-e29b-41d4-a716-446655440000" || echo "BASENAME NOT FOUND"
-          echo "--- width behaviour ---"
-          echo "COLUMNS=${COLUMNS:-unset}"
-          ps -axo command= 2>&1 | awk '{ print length }' | sort -rn | head -3
-          echo "--- ps -axo ww ---"
-          ps -axo ww= 2>&1 | grep -c "$PROBE" || echo "NOT FOUND with ww"
-          kill "$PID" 2>/dev/null || true
+          NAME="ho-probe-550e8400e29b41d4a716446655440000"
+          P="/tmp/$NAME"
+
+          echo "=== A: copied /bin/sleep (current approach) ==="
+          cp /bin/sleep "$P.a"; "$P.a" 30 & A=$!; sleep 0.5
+          echo "alive: $(kill -0 $A 2>/dev/null && echo yes || echo NO)"; kill $A 2>/dev/null
+
+          echo "=== B: shebang script with the long name ==="
+          printf '#!/bin/sh\nsleep 30\n' > "$P.b"; chmod +x "$P.b"
+          "$P.b" & B=$!; sleep 0.5
+          echo "alive: $(kill -0 $B 2>/dev/null && echo yes || echo NO)"
+          echo "comm: $(cat /proc/$B/comm 2>/dev/null)"
+          echo "ps line: $(ps -axo command= | grep -F "$NAME.b" | head -1)"
+          echo "pgrep -x full: $(pgrep -x "$NAME.b" >/dev/null 2>&1 && echo match || echo no)"
+          echo "ps component split test:"
+          ps -axo command= | grep -F "$NAME.b" | head -1 | tr -s ' /' '\n\n\n' | grep -Fx "$NAME.b" && echo "  COMPONENT MATCH OK" || echo "  COMPONENT MATCH FAILED"
+          kill $B 2>/dev/null
+
+          echo "=== C: symlink to /bin/sleep ==="
+          ln -s /bin/sleep "$P.c"; "$P.c" 30 & C=$!; sleep 0.5
+          echo "alive: $(kill -0 $C 2>/dev/null && echo yes || echo NO)"; kill $C 2>/dev/null
+
+          echo "=== D: does the interpreter path survive argv0 rename? ==="
+          echo "=== E: what is /bin/sleep actually? ==="
+          file /bin/sleep 2>/dev/null || ls -l /bin/sleep
+          ls -l /bin/sh
+          rm -f "$P".?
