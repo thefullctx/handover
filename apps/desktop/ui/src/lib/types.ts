@@ -172,6 +172,16 @@ export interface ChatTurn {
    *  received (shown expandable per turn: nothing is ever hidden). */
   prompt: string;
   outcome: SendOutcome;
+  /** The daemon-measured size of the rendered prompt, snapshotted when this
+   *  handoff finished. Measured in Rust (it can disagree with a JS re-count
+   *  of the same string), so it is recorded rather than recomputed. Absent
+   *  for turns reopened from history, which never streamed. */
+  promptBytes?: number | null;
+  /** Delay from send to the first output chunk. This is a *stream*
+   *  measurement — it does not exist once the handoff is over — so it is
+   *  snapshotted at completion and is the one stat that cannot be derived
+   *  from the outcome afterwards. */
+  firstResponseMs?: number | null;
 }
 
 /**

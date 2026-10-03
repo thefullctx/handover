@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../Icons";
-import { captureSnippet, cleanReply, failureMessage, fmtBytes, fmtDuration, fmtMs, filterLiveStream, PHASE_STEPS, phaseIndex, sessionTimeLabel, truncate } from "../lib/format";
+import { byteLength, captureSnippet, cleanReply, failureMessage, fmtBytes, fmtDuration, fmtMs, filterLiveStream, PHASE_STEPS, phaseIndex, sessionTimeLabel, truncate } from "../lib/format";
 import type { AgentMeta, ApprovalResult, ChatTurn, HandoffActivity, LiveSession } from "../lib/types";
 import ApprovalCard from "./ApprovalCard";
 
@@ -34,6 +34,93 @@ interface Props {
   approving?: boolean;
   approvalNote?: ApprovalResult | null;
   onSend: (text: string) => void;
+}
+
+/**
+ * Builds the activity payload for a *finished* turn.
+ *
+ * Output volume and phase are derivable from the outcome itself, so they are
+ * derived here rather than stored. Prompt size comes from the daemon's own
+ * measurement when the turn streamed; turns reopened from history never
+ * streamed, so it falls back to measuring the prompt we do have. Time to first
+ * response is the one value that cannot be recovered after the fact and is
+ * carried on the turn itself.
+ *
+ * Returns `null` when there is nothing worth showing, so a turn with no
+ * receipt and no measurements renders no panel rather than an empty one.
+ */
+function turnActivity(turn: ChatTurn): HandoffActivity | null {
+  const output = [turn.outcome.receipt?.stdout ?? "", turn.outcome.receipt?.stderr ?? ""]
+    .filter(Boolean)
+    .join("\n");
+  const promptBytes =
+    turn.promptBytes ?? (turn.prompt ? byteLength(turn.prompt) : null);
+  if (!output.trim() && promptBytes === null && turn.firstResponseMs == null) {
+    return null;
+  }
+  return {
+    phase: "done",
+    promptBytes,
+    firstResponseMs: turn.firstResponseMs ?? null,
+    outputBytes: byteLength(output),
+    output,
+  };
+}
+
+/** The collapsible "Show activity" panel — phase timeline, measured stats and
+ *  the raw agent output. Rendered per turn so each exchange reports its own
+ *  numbers, and live on the in-flight turn while it streams. */
+function ActivitySection({ activity, testId }: { activity: HandoffActivity; testId: string }) {
+  return (
+    <details className="chat-activity" data-testid={testId}>
+      <summary>
+        <Icon name="activity" size={12} />
+        Show activity
+      </summary>
+      <div className="activity-body">
+        {/* Phase timeline — the current phase is derived from the output
+            stream in App.tsx, never animated on a timer. */}
+        <ol className="activity-phases" data-testid={`${testId}-phases`}>
+          {PHASE_STEPS.map((step, idx) => {
+            const active = phaseIndex(activity.phase) === idx;
+            const done = activity.phase === "done" || phaseIndex(activity.phase) > idx;
+            return (
+              <li
+                key={step.id}
+                className={`activity-phase${active ? " active" : ""}${done ? " done" : ""}`}
+                data-active={active ? "true" : "false"}
+              >
+                {step.label}
+              </li>
+            );
+          })}
+        </ol>
+        <div className="activity-stats">
+          <span className="activity-stat">
+            <span className="activity-stat-label">Prompt</span>
+            <span data-testid={`${testId}-prompt-size`}>
+              {activity.promptBytes === null ? "—" : fmtBytes(activity.promptBytes)}
+            </span>
+          </span>
+          <span className="activity-stat">
+            <span className="activity-stat-label">First response</span>
+            <span data-testid={`${testId}-first-response`}>
+              {activity.firstResponseMs === null ? "—" : fmtMs(activity.firstResponseMs)}
+            </span>
+          </span>
+          <span className="activity-stat">
+            <span className="activity-stat-label">Output</span>
+            <span data-testid={`${testId}-output-volume`}>{fmtBytes(activity.outputBytes)}</span>
+          </span>
+        </div>
+        {activity.output.trim() && (
+          <pre className="activity-output" data-testid={`${testId}-output`}>
+            {truncate(activity.output, 4000)}
+          </pre>
+        )}
+      </div>
+    </details>
+  );
 }
 
 /**
@@ -112,6 +199,9 @@ export default function ChatView({
           const mine = turn.outcome.capture?.content.text ?? captureSnippet(turn.outcome.capture ?? null);
           const reply = cleanReply(turn.outcome.receipt?.stdout ?? "");
           const ok = turn.outcome.ok;
+          // Each turn reports its OWN measurements — a single global panel
+          // made turn 1 display turn 2's numbers.
+          const activity = turnActivity(turn);
           return (
             <div className="chat-turn" key={i}>
               <div className="chat-row user">
@@ -145,7 +235,9 @@ export default function ChatView({
                   </span>
                   {ok ? (
                     reply ? (
-                      <span className="chat-text">{truncate(reply, 8000)}</span>
+                      <span className="chat-text" data-testid="chat-reply">
+                        {truncate(reply, 8000)}
+                      </span>
                     ) : (
                       <span className="chat-text muted">
                         The agent finished without returning text output.
@@ -174,6 +266,9 @@ export default function ChatView({
                   )}
                 </div>
               </div>
+              {activity && (
+                <ActivitySection activity={activity} testId={`chat-activity-${i}`} />
+              )}
             </div>
           );
         })}
@@ -195,7 +290,9 @@ export default function ChatView({
                 {/* Banner noise (session-resume lines) is filtered out — the
                     smooth thinking state stays up until real reply text. */}
                 {filterLiveStream(liveText).trim() ? (
-                  <span className="chat-text live">{truncate(filterLiveStream(liveText), 8000)}</span>
+                  <span className="chat-text live" data-testid="chat-live">
+                    {truncate(filterLiveStream(liveText), 8000)}
+                  </span>
                 ) : (
                   <span className="chat-thinking">
                     <span className="pixel-loader" aria-hidden="true" />
@@ -203,62 +300,13 @@ export default function ChatView({
                   </span>
                 )}
               </div>
+              {/* The in-flight turn owns the live panel; once it completes the
+                  measurements are snapshotted onto the turn itself. */}
+              {activity && <ActivitySection activity={activity} testId="chat-activity" />}
             </div>
           </div>
         )}
       </div>
-
-      {activity && (
-        <details className="chat-activity" data-testid="chat-activity">
-          <summary>
-            <Icon name="activity" size={12} />
-            Show activity
-          </summary>
-          <div className="activity-body">
-            {/* Phase timeline — the current phase is derived from the output
-                stream in App.tsx, never animated on a timer. */}
-            <ol className="activity-phases" data-testid="activity-phases">
-              {PHASE_STEPS.map((step) => {
-                const active = phaseIndex(activity.phase) === PHASE_STEPS.indexOf(step);
-                const done =
-                  activity.phase === "done" || phaseIndex(activity.phase) > PHASE_STEPS.indexOf(step);
-                return (
-                  <li
-                    key={step.id}
-                    className={`activity-phase${active ? " active" : ""}${done ? " done" : ""}`}
-                    data-active={active ? "true" : "false"}
-                  >
-                    {step.label}
-                  </li>
-                );
-              })}
-            </ol>
-            <div className="activity-stats">
-              <span className="activity-stat">
-                <span className="activity-stat-label">Prompt</span>
-                <span data-testid="stat-prompt-size">
-                  {activity.promptBytes === null ? "—" : fmtBytes(activity.promptBytes)}
-                </span>
-              </span>
-              <span className="activity-stat">
-                <span className="activity-stat-label">First response</span>
-                <span data-testid="stat-first-response">
-                  {activity.firstResponseMs === null ? "—" : fmtMs(activity.firstResponseMs)}
-                </span>
-              </span>
-              <span className="activity-stat">
-                <span className="activity-stat-label">Output</span>
-                <span data-testid="stat-output-volume">{fmtBytes(activity.outputBytes)}</span>
-              </span>
-            </div>
-            {activity.output.trim() && (
-              <pre className="activity-output" data-testid="activity-output">
-                {truncate(activity.output, 4000)}
-              </pre>
-            )}
-          </div>
-        </details>
-      )}
 
       <div className="followup-composer">
         <textarea

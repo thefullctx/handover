@@ -432,7 +432,7 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     );
     // The reply lands in the thread.
     await waitFor(() =>
-      expect(within(screen.getByTestId("chat-thread")).getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
+      expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
   });
 
@@ -460,7 +460,7 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
 
     // The adopted session anchors follow-ups explicitly.
     await waitFor(() =>
-      expect(within(screen.getByTestId("chat-thread")).getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
+      expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
     await user.click(composer);
     await user.keyboard("and then?");
@@ -477,7 +477,7 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     await user.keyboard("what's next");
     await user.keyboard("{Enter}");
     await waitFor(() =>
-      expect(within(screen.getByTestId("chat-thread")).getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
+      expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
     // makeOutcome's receipt duration_ms = 45000 → "0:45".
     expect(screen.getByText("0:45")).toBeInTheDocument();
@@ -532,7 +532,7 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
       payload: { id: "handoff-0", stream: "stdout", chunk: "Working through" },
     });
     await waitFor(() =>
-      expect(within(inflight).getByText(/Working through/)).toBeInTheDocument()
+      expect(screen.getByTestId("chat-live")).toHaveTextContent(/Working through/)
     );
 
     pending.resolve(makeOutcome());
@@ -547,7 +547,7 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     await user.keyboard("first conversation");
     await user.keyboard("{Enter}");
     await waitFor(() =>
-      expect(within(screen.getByTestId("chat-thread")).getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
+      expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
 
     // Pick another agent — same surface, fresh thread.
@@ -580,10 +580,10 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     tauri.listeners["handoff:started"]({ payload: { id: "handoff-9", prompt_len: 2048 } });
     const activity = await screen.findByTestId("chat-activity");
     await waitFor(() =>
-      expect(screen.getByTestId("stat-prompt-size")).toHaveTextContent("2.0 KB")
+      expect(screen.getByTestId("chat-activity-prompt-size")).toHaveTextContent("2.0 KB")
     );
     // Nothing has come back yet — "not measured", not a fake zero.
-    expect(screen.getByTestId("stat-first-response")).toHaveTextContent("—");
+    expect(screen.getByTestId("chat-activity-first-response")).toHaveTextContent("—");
     // The phase starts at "Sending context" (no output observed yet).
     expect(within(activity).getByText("Sending context")).toHaveAttribute("data-active", "true");
     expect(within(activity).getByText("Agent responding")).toHaveAttribute("data-active", "false");
@@ -606,15 +606,16 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     await waitFor(() =>
       expect(screen.getByText("Agent responding")).toHaveAttribute("data-active", "true")
     );
-    expect(screen.getByTestId("stat-first-response")).not.toHaveTextContent("—");
+    expect(screen.getByTestId("chat-activity-first-response")).not.toHaveTextContent("—");
     // Output volume grows with the stream (18 bytes of real text).
-    expect(screen.getByTestId("stat-output-volume")).toHaveTextContent("18 B");
-    expect(screen.getByTestId("activity-output")).toHaveTextContent("Working through it");
+    // Output volume grows with the stream (18 bytes of real text).
+    expect(screen.getByTestId("chat-activity-output-volume")).toHaveTextContent("18 B");
+    expect(screen.getByTestId("chat-activity-output")).toHaveTextContent("Working through it");
 
     pending.resolve(makeOutcome());
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
     // Finished: every timeline step is behind us, none is "active".
-    const steps = screen.getByTestId("activity-phases");
+    const steps = screen.getByTestId("chat-activity-0-phases");
     expect(steps.querySelectorAll('[data-active="true"]')).toHaveLength(0);
     expect(screen.getAllByText(/Wrapping up/).length).toBeGreaterThan(0);
   });
@@ -627,12 +628,12 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     await user.keyboard("what's next");
     await user.keyboard("{Enter}");
     await waitFor(() =>
-      expect(within(screen.getByTestId("chat-thread")).getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
+      expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
     // The receipt's stdout is the evidence, and its byte length is the stat.
-    const activity = screen.getByTestId("chat-activity");
+    const activity = screen.getByTestId("chat-activity-0");
     expect(within(activity).getByText(/Fixed the panic/)).toBeInTheDocument();
-    expect(screen.getByTestId("stat-output-volume")).toHaveTextContent(/B|KB/);
+    expect(screen.getByTestId("chat-activity-0-output-volume")).toHaveTextContent(/B|KB/);
   });
 
   it("shows the exact prompt sent, not just what was typed", async () => {
@@ -643,7 +644,7 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     await user.keyboard("what's next");
     await user.keyboard("{Enter}");
     await waitFor(() =>
-      expect(within(screen.getByTestId("chat-thread")).getByText(/Fixed the panic by adding a null check/)).toBeInTheDocument()
+      expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
 
     // Transparency: the rendered prompt the agent received is one click away.
@@ -669,7 +670,7 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     await screen.findByTestId("chat-inflight");
     tauri.listeners["handoff:started"]({ payload: { id: "handoff-1", prompt_len: 4096 } });
     await waitFor(() =>
-      expect(screen.getByTestId("stat-prompt-size")).toHaveTextContent("4.0 KB")
+      expect(screen.getByTestId("chat-activity-prompt-size")).toHaveTextContent("4.0 KB")
     );
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
 
@@ -680,7 +681,7 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     await user.keyboard("second");
     await user.keyboard("{Enter}");
     await screen.findByTestId("chat-inflight");
-    expect(screen.getByTestId("stat-prompt-size")).toHaveTextContent("—");
+    expect(screen.getByTestId("chat-activity-prompt-size")).toHaveTextContent("—");
     // Settle before finishing: a send still in flight would keep the mock
     // call log dirty for the next test in this file.
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
@@ -704,15 +705,16 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     await user.click(composer);
     await user.keyboard("second");
     await user.keyboard("{Enter}");
-    const inflight = await screen.findByTestId("chat-inflight");
+    await screen.findByTestId("chat-inflight");
 
     tauri.listeners["handoff:output"]({
       payload: { id: "handoff-1", stream: "stdout", chunk: "STALE OUTPUT" },
     });
     await waitFor(() =>
-      expect(screen.getByTestId("stat-output-volume")).not.toHaveTextContent("STALE")
+      expect(screen.getByTestId("chat-activity-output-volume")).not.toHaveTextContent("STALE")
     );
-    expect(within(inflight).queryByText(/STALE OUTPUT/)).not.toBeInTheDocument();
+    // Nothing anywhere in the thread should carry the straggler's text.
+    expect(screen.queryByText("STALE OUTPUT")).not.toBeInTheDocument();
 
     // Once this handoff announces itself, its own chunks are accepted.
     tauri.listeners["handoff:started"]({ payload: { id: "handoff-2", prompt_len: 128 } });
@@ -720,9 +722,59 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
       payload: { id: "handoff-2", stream: "stdout", chunk: "FRESH OUTPUT" },
     });
     await waitFor(() =>
-      expect(within(inflight).getByText(/FRESH OUTPUT/)).toBeInTheDocument()
+      expect(screen.getByTestId("chat-live")).toHaveTextContent(/FRESH OUTPUT/)
     );
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
+  });
+
+  it("gives every turn its own activity panel with its own measurements", async () => {
+    const first = deferred<unknown>();
+    const user = await renderApp(makePayload(), [], { send_handoff: first.promise });
+    await chooseAgent(user, /Codex/);
+    const composer = screen.getByLabelText("Chat message");
+
+    // ---- handoff 1 ----
+    await user.click(composer);
+    await user.keyboard("first");
+    await user.keyboard("{Enter}");
+    await screen.findByTestId("chat-inflight");
+    tauri.listeners["handoff:started"]({ payload: { id: "handoff-1", prompt_len: 1024 } });
+    tauri.listeners["handoff:output"]({
+      payload: { id: "handoff-1", stream: "stdout", chunk: "FIRST REPLY" },
+    });
+    first.resolve(makeOutcome({ id: "handoff-1", receipt: { ok: true, detail: "ok", duration_ms: 1000, stdout: "FIRST REPLY", stderr: "" } }));
+    await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
+
+    // ---- handoff 2: different prompt size, different output ----
+    const second = deferred<unknown>();
+    tauri.invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "send_handoff") return second.promise;
+      if (cmd === "palette_payload") return makePayload();
+      if (cmd === "recent_handoffs") return [];
+      if (["notify_result", "hide_palette", "copy_text", "open_settings_window", "clear_history"].includes(cmd)) return undefined;
+      if (cmd === "read_dropped_files") return [];
+      throw new Error(`unhandled invoke: ${cmd}`);
+    });
+    await user.click(composer);
+    await user.keyboard("second");
+    await user.keyboard("{Enter}");
+    await screen.findByTestId("chat-inflight");
+    tauri.listeners["handoff:started"]({ payload: { id: "handoff-2", prompt_len: 3072 } });
+    tauri.listeners["handoff:output"]({
+      payload: { id: "handoff-2", stream: "stdout", chunk: "SECOND REPLY, LONGER" },
+    });
+    second.resolve(makeOutcome({ id: "handoff-2", receipt: { ok: true, detail: "ok", duration_ms: 2000, stdout: "SECOND REPLY, LONGER", stderr: "" } }));
+    await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
+
+    // Two panels, two sets of numbers. A single global panel used to make the
+    // first turn report the *second* handoff's figures.
+    expect(screen.getByTestId("chat-activity-0")).toBeInTheDocument();
+    expect(screen.getByTestId("chat-activity-1")).toBeInTheDocument();
+    expect(screen.getByTestId("chat-activity-0-prompt-size")).toHaveTextContent("1.0 KB");
+    expect(screen.getByTestId("chat-activity-1-prompt-size")).toHaveTextContent("3.0 KB");
+    expect(screen.getByTestId("chat-activity-0-output")).toHaveTextContent("FIRST REPLY");
+    expect(screen.getByTestId("chat-activity-0-output")).not.toHaveTextContent("SECOND REPLY");
+    expect(screen.getByTestId("chat-activity-1-output")).toHaveTextContent("SECOND REPLY, LONGER");
   });
 });
 

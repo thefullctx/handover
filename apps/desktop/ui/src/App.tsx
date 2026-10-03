@@ -81,6 +81,14 @@ export default function App() {
   const [sendStartedAt, setSendStartedAt] = useState<number | null>(null);
   const [firstChunkAt, setFirstChunkAt] = useState<number | null>(null);
   const [lastChunkAt, setLastChunkAt] = useState<number | null>(null);
+  /** Mirror of the live stamps above, readable synchronously when a handoff
+   *  completes. The `doSend` callback captures its state once, so it cannot
+   *  read the current values off the closure — but time-to-first-response
+   *  only exists in the stream, so it has to be snapshotted at the moment
+   *  the send resolves, not recomputed afterwards. */
+  const sendStartedAtRef = useRef<number | null>(null);
+  const firstChunkAtRef = useRef<number | null>(null);
+  const promptBytesRef = useRef<number | null>(null);
   /** Ticks while the chat is open so the elapsed timer AND the phase
    *  derivation (idle > WRAPPING_IDLE_MS) stay live. */
   const [now, setNow] = useState(() => Date.now());
@@ -476,6 +484,7 @@ export default function App() {
       const at = Date.now();
       setFirstChunkAt((prev) => (prev === null ? at : prev));
       setLastChunkAt(at);
+      if (firstChunkAtRef.current === null) firstChunkAtRef.current = at;
     }).then((fn) => unlisteners.push(fn));
     // The daemon emits the stable handoff id + rendered prompt size as soon
     // as the send starts. The id correlates streamed `handoff:output` chunks
@@ -485,6 +494,7 @@ export default function App() {
       // The rendered prompt's byte size, measured in Rust. This is the "prompt
       // size" stat in the activity section.
       setPromptBytes(e.payload.prompt_len);
+      promptBytesRef.current = e.payload.prompt_len;
     }).then((fn) => unlisteners.push(fn));
     // External file drags: WKWebView blocks dataTransfer.files, so Tauri
     // forwards the drop paths through these native events. Text drags come
@@ -580,16 +590,31 @@ export default function App() {
       // Fresh activity measurements for this handoff. promptBytes is reset
       // too — until this send's handoff:started lands, the previous
       // handoff's prompt size would otherwise be attributed to this one.
-      setSendStartedAt(Date.now());
+      const startedAt = Date.now();
+      setSendStartedAt(startedAt);
       setPromptBytes(null);
       setFirstChunkAt(null);
       setLastChunkAt(null);
+      sendStartedAtRef.current = startedAt;
+      firstChunkAtRef.current = null;
+      promptBytesRef.current = null;
+
+      /** Snapshots the two stream-only measurements onto the finished turn.
+       *  Output volume and the prompt are recoverable from the outcome, but
+       *  time-to-first-response is not — it happened during the stream. */
+      const measured = () => ({
+        promptBytes: promptBytesRef.current,
+        firstResponseMs:
+          sendStartedAtRef.current !== null && firstChunkAtRef.current !== null
+            ? Math.max(0, firstChunkAtRef.current - sendStartedAtRef.current)
+            : null,
+      });
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
 
       /** A failed exchange still lands in the thread — the user sees the
        *  error in place instead of being bounced out of the conversation. */
       const appendFailedTurn = (outcome: SendOutcome) => {
-        setChatTurns((t) => [...t, { prompt: outcome.prompt, outcome }]);
+        setChatTurns((t) => [...t, { prompt: outcome.prompt, outcome, ...measured() }]);
         setChatPendingText(null);
         setOutcome(outcome);
         setStep("chat");
@@ -607,7 +632,7 @@ export default function App() {
             setChatSessionId(res.session_id);
             setChatSessionExplicit(true);
           }
-          setChatTurns((t) => [...t, { prompt: res.prompt, outcome: res }]);
+          setChatTurns((t) => [...t, { prompt: res.prompt, outcome: res, ...measured() }]);
           setChatPendingText(null);
           setStep("chat");
           const dur = res.receipt ? ` in ${fmtDuration(res.receipt.duration_ms)}` : "";
