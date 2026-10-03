@@ -232,6 +232,14 @@ that has not been observed yet renders as `—`, not `0`. The in-flight bubble s
 elapsed timer and the streaming reply. Escape dismisses the palette but never cancels a
 handoff in flight.
 
+**Each exchange owns its own panel.** The live panel belongs to the turn in flight; when
+that handoff completes, its two stream-only measurements are snapshotted onto the turn
+(`promptBytes` from Rust, `firstResponseMs` from the stream) and the panel is re-rendered
+in place. The other two stats are *derived* at render time from the outcome's receipt, so
+they are never stored stale. Time to first response is the reason any of this is stored at
+all: it only exists during the stream and cannot be recovered from the outcome afterwards.
+One global panel was wrong here — it made turn 1 report turn 2's numbers.
+
 Every turn also carries a **"Prompt that was sent"** disclosure: the exact rendered prompt
 the agent received (which may differ from what was typed — a chat message goes through the
 `ask` template, a captured file adds context headers), not just the text in the bubble.

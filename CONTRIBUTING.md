@@ -216,8 +216,9 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
    - dragging text or a file onto the palette captures it (drop overlay while dragging);
      unreadable drops explain why in plain language
    - while sending, the status sentence evolves (sending context → responding → wrapping
-     up) and the activity section shows the phase timeline + prompt / first-response /
-     output stats
+     up) and the in-flight turn's activity section shows the phase timeline + prompt /
+     first-response / output stats; after it completes, every turn keeps its own panel
+     with its own numbers (two exchanges in one thread must not share figures)
    - Settings: opens on demand (not pre-created at launch); traffic-light chrome on
      macOS; appearance and window-opacity re-theme live on palette + Settings; the
      configurable shortcut re-registers without a relaunch; launch-at-startup and

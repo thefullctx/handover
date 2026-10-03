@@ -126,7 +126,7 @@ You are never left wondering what happened after the handoff:
   (`Codex is working · 12s`), with the reply streaming inline as it arrives. Press `esc` to dismiss
   the palette — the handoff keeps running and a **native macOS notification** still fires on
   completion (the banner belongs to Handover; clicking it activates the app, not Script Editor).
-- **Activity** — a collapsible **Show activity** section holds the raw agent output plus a phase
+- **Activity** — every exchange carries its own collapsible **Show activity** section holding the raw agent output plus a phase
   timeline (Sending context → Agent responding → Wrapping up) and real measurements: the rendered
   **prompt size**, **time to first response**, and live **output volume**. The phase is *derived
   from the output stream*, not guessed: no output yet is "Sending context", flowing output is
@@ -443,7 +443,8 @@ Implemented and verified end-to-end:
 - ✅ Concurrent agent stdout/stderr drain, output caps, process-group timeout (Unix)
 - ✅ Chat delivers messages verbatim into the resumed session (`ask` template, no preamble) — the composer opens clean, dropped text/files pre-fill it, and nothing sends without an explicit `Enter`
 - ✅ Live handoff feedback: stream-derived phase timeline (sending context → agent responding →
-  wrapping up), collapsible activity with prompt-size / first-response / output stats, per-turn
+  wrapping up), per-turn collapsible activity (each exchange reports its own
+  prompt-size / first-response / output stats), per-turn
   "Prompt that was sent" disclosure, completions that stay in the thread, with the full result
   panel (copy, follow-up, repeat, retry) one click from Recent handoffs
 - ✅ First-run onboarding (teach by doing — the hotkey press dismisses it) with a "pick your
@@ -473,7 +474,7 @@ Implemented and verified end-to-end:
   `session_id` on every message), messages delivered verbatim (no action preamble — the
   exact text you type is exactly what the agent receives), inline streaming + per-turn
   "Prompt that was sent" transparency
-- ✅ 202 Rust unit tests + 68 Vitest/Testing Library tests covering the keyboard-first flows
+- ✅ 202 Rust unit tests + 69 Vitest/Testing Library tests covering the keyboard-first flows
   and the session/approval/chat/activity layers; `cargo clippy --workspace --all-targets` is
   warning-free (enforced in CI — see [.github/workflows/ci.yml](.github/workflows/ci.yml))
 - ✅ Production Content Security Policy (never disabled); prompt temp-cache dir overridable with `HANDOVER_PROMPT_CACHE_DIR` for sandboxed CI
