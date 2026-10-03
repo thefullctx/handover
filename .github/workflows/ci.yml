@@ -33,7 +33,7 @@ jobs:
         # approval); the libraries and daemon build anywhere.
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # rust-toolchain.toml pins the version; rustup fetches it automatically.
       - uses: dtolnay/rust-toolchain@master
@@ -79,9 +79,9 @@ jobs:
       run:
         working-directory: apps/desktop/ui
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -102,11 +102,20 @@ jobs:
       - name: build
         run: npm run build
 
+      # Advisory visibility for what actually ships. `--omit=dev` scopes it to
+      # production dependencies, so the accepted dev-only vitest advisory (see
+      # CONTRIBUTING "Known dependency advisories") does not drown out real
+      # risk. Non-blocking on purpose: this reports, it does not gate.
+      - name: audit (production deps, non-blocking)
+        if: always()
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=high
+
   smoke:
     name: End-to-end smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@master
         with:
