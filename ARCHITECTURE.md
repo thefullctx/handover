@@ -335,10 +335,11 @@ sessions are out of scope by design.
 
 The per-agent facts discovery is built on, verified on-machine 2026-08-14
 (web research + `scripts/probe-sessions.sh`, which reads filenames + mtimes
-only). Claude Code was not installed on the verification machine — its catalog
-entry is kept, best-effort until tested. This table is the **maintenance point
-for agent CLI drift**: keep it in sync with `session_id_from_filename()` in
-`handover-core` and `builtin_session_agents()` in `handover-config`.
+only) and **re-verified 2026-10-04** (see "Adapter compatibility" below for the
+per-agent verified versions). This table is the **maintenance point for agent
+CLI drift**: keep it in sync with `session_id_from_filename()` in
+`handover-core`, `builtin_session_agents()` in `handover-config`, and the
+`ADAPTER_COMPAT` declaration.
 
 | agent | sessions on disk | resume (interactive) | resume (headless) | streams |
 |---|---|---|---|---|
@@ -347,6 +348,37 @@ for agent CLI drift**: keep it in sync with `session_id_from_filename()` in
 | droid | `~/.factory/sessions/<enc-cwd>/<uuid>.jsonl` (per-session `.settings.json` sibling) | `droid --resume [id]` (`-r`, defaults to last modified) | `droid exec -s <id> "{P}"` / `droid exec -s <id> -f file` | `-o stream-json` / `-o json` |
 | omp | `~/.omp/agent/sessions/<enc-cwd>/<ts>_<sessionId>.jsonl` (id after last `_`) + breadcrumbs `terminal-sessions/<tid>` | `omp -r <id>` (id prefix OK, picker if omitted) / `omp -c` | `omp -p "{P}" -r <id>` / `omp -p "{P}" -c` | `-p` streams, `--print-thoughts` |
 | hermes | SQLite `~/.hermes/state.db` (FTS5) — no fs glob; use `hermes sessions list`. Id format `20260812_130220_dbf5cf` | `hermes --resume <id>` (`-r`) / `--continue` (`-c`) by id or title | `hermes chat -q "{P}" --resume <id>` / `--resume latest --in <dir>` | `chat -q` streams |
+
+#### Adapter compatibility
+
+An "adapter" here is **not code** — it is the set of assumptions Handover makes
+about one agent's CLI, spread across five tables keyed by the agent id string:
+
+| Surface | Where |
+|---|---|
+| Session catalog (`command`, `resume_command`, discovery) | `builtin_session_agents()` in `handover-config` |
+| Gallery catalog (`binary_name`, `candidate_paths`, `command_template`) | `agent_catalog()` in `handover-daemon` |
+| Session-id rules (filename → id) | `session_id_from_filename()` in `handover-core` |
+| Rotated-id shapes (hermes ts-hex vs uuid) | `matches_id_shape()` in `handover-agents` |
+| Provider-config locations | `sniff_endpoint()` in `handover-daemon` |
+
+When an agent changes its CLI, those assumptions go stale **silently**: a
+renamed resume flag or a changed session filename still exits 0, so the handoff
+reports *"Handed off successfully"* while the context landed in the wrong
+conversation. Nothing in the architecture can catch that automatically without
+probing every agent's `--version` on every status poll (a subprocess per agent
+per 4s UI refresh) — deliberately not done.
+
+Instead, `ADAPTER_COMPAT` in `handover-config::adapter` **declares** which agent
+version each adapter was verified against, on what date, and which exact surface
+would break. It is surfaced as `AgentMeta.compat` and printed by
+`handover agents`, so a drift bug report carries evidence ("verified against
+0.160.0" next to the reporter's actual version) instead of a guess.
+
+This is a declaration, not a version-management system: no ranges, no resolver,
+no dependency graph. An unverified adapter says `unverified` rather than
+guessing (currently `hermes`, whose launcher could not be run). The enforcement
+is in tests — see CONTRIBUTING.md, "Updating an agent adapter".
 
 Key findings from the verification:
 

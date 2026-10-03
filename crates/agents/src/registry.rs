@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use handover_config::{AgentConfig, AgentKind};
+use handover_config::{compat_for, AgentConfig, AgentKind};
 use handover_core::agent::{
     Agent, AgentError, AgentMetaStatus, AgentRequest, AgentStatus, SendReceipt,
 };
@@ -115,6 +115,7 @@ impl Agent for UnsupportedAgent {
             description: self.config.description.clone().unwrap_or_default(),
             kind: "openai_compatible".to_string(),
             config_summary: None,
+            compat: compat_for(&self.config.id).map(|c| c.summary()),
             demo: self.config.demo,
         }
     }
@@ -176,6 +177,37 @@ mod tests {
         let registry = AgentRegistry::from_configs(&[invalid, valid]);
         assert!(registry.get("broken").is_none());
         assert!(registry.get("good").is_some());
+    }
+
+    #[test]
+    fn meta_carries_the_adapter_compat_declaration() {
+        // A bundled agent surfaces which version its adapter was verified
+        // against, so a drift report can be weighed against what the user has.
+        let mut bundled = config("codex");
+        bundled.kind = AgentKind::Session;
+        bundled.session_glob = Some("~/.codex/sessions/*/*/*/*.jsonl".into());
+        bundled.resume_command = Some("codex exec resume {SESSION}".into());
+        let registry = AgentRegistry::from_configs(&[bundled]);
+
+        let meta = registry.get("codex").expect("codex registered").meta();
+        let compat = meta.compat.expect("bundled agent declares compat");
+        assert!(
+            compat.contains("adapter:") && compat.contains("verified"),
+            "compat must name the verified version and date: {compat}"
+        );
+    }
+
+    #[test]
+    fn meta_has_no_compat_for_a_users_own_command_agent() {
+        // A hand-written command agent carries no bundled assumptions, so it
+        // must not be given a declaration it never earned.
+        let registry = AgentRegistry::from_configs(&[config("my-own-agent")]);
+        let meta = registry.get("my-own-agent").expect("registered").meta();
+        assert!(
+            meta.compat.is_none(),
+            "unexpected compat: {:?}",
+            meta.compat
+        );
     }
 
     #[test]

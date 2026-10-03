@@ -163,8 +163,12 @@ fn cmd_agents() -> Result<(), String> {
         let kind = item["meta"]["kind"].as_str().unwrap_or("?");
         let available = item["status"]["available"].as_bool().unwrap_or(false);
         let summary = item["meta"]["config_summary"].as_str().unwrap_or("");
+        // Adapter compat: which agent version this adapter's CLI assumptions
+        // were verified against. Printed so a drift report can be weighed
+        // against the version the user actually has.
+        let compat = item["meta"]["compat"].as_str().unwrap_or("");
         println!(
-            "{id}\t{name}\t[{kind}]\t{}: {}{}",
+            "{id}\t{name}\t[{kind}]\t{}: {}{}{}",
             if available {
                 "available"
             } else {
@@ -175,6 +179,11 @@ fn cmd_agents() -> Result<(), String> {
                 String::new()
             } else {
                 format!("\t{summary}")
+            },
+            if compat.is_empty() {
+                String::new()
+            } else {
+                format!("\t{compat}")
             }
         );
     }

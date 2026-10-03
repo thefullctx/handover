@@ -263,6 +263,102 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
      permission prompt → palette/CLI shows `blocked` → Approve/Deny → verified result
      (agent resumed) or the fail-soft "couldn't confirm — check the terminal" path
 
+## Adding or updating an agent adapter
+
+An adapter is **not code** — it is the set of assumptions Handover makes about
+one agent's CLI. Those assumptions live in five places, all keyed by the agent
+id string:
+
+| What it holds | File | Function |
+|---|---|---|
+| Session discovery + resume command | `crates/config/src/config.rs` | `builtin_session_agents()` |
+| Binary name, install paths, send command | `crates/daemon/src/catalog.rs` | `agent_catalog()` |
+| How a session filename becomes a session id | `crates/core/src/session.rs` | `session_id_from_filename()` |
+| Whether an id is hermes-style or a uuid | `crates/agents/src/session_agent.rs` | `matches_id_shape()` |
+| Where the agent's model endpoint is configured | `crates/daemon/src/provider_health.rs` | `sniff_endpoint()` |
+
+You normally touch only the first two. See ARCHITECTURE.md, "Adapter
+compatibility", for the design.
+
+When an agent changes its CLI, those assumptions go stale **silently**: a renamed
+resume flag or a changed session filename still exits 0, so Handover reports
+*"Handed off successfully"* while the context landed in the wrong conversation.
+Handover therefore **declares** which agent version each adapter was verified
+against, in `ADAPTER_COMPAT` in `crates/config/src/adapter.rs`.
+
+### Adding a brand-new agent
+
+1. Add it to `builtin_session_agents()` (`crates/config/src/config.rs`) — give
+   it an `id`, a fresh-send `command`, and, if the agent has resumable sessions,
+   a `resume_command` containing `{SESSION}` plus exactly one of `session_glob`
+   / `session_cli_list`.
+2. Add it to `agent_catalog()` (`crates/daemon/src/catalog.rs`) so Settings can
+   offer it, with the `binary_name` and the `{BIN} …` command template.
+3. Add an `ADAPTER_COMPAT` entry (`crates/config/src/adapter.rs`):
+
+   ```rust
+   AdapterCompat {
+       agent_id: "my-agent",              // must match the id used above
+       verified_agent_version: Some("1.2.3"), // what you actually ran
+       verified_on: "2026-10-04",         // today, ISO YYYY-MM-DD
+       assumes: "sessions at ~/.my-agent/sessions/<uuid>.jsonl (filename IS \
+                 the session id); resume via `my-agent -r <id> \"{PROMPT}\"`",
+   },
+   ```
+
+4. Add a row to the "Per-agent session facts" table in ARCHITECTURE.md.
+
+Then run `cargo test -p handover-config -p handover-daemon` — the drift guards
+below will tell you if you missed a step.
+
+### Updating an existing agent after its CLI changed
+
+Do all of this in the **same** change:
+
+1. **Update the adapter itself** — the command, `resume_command`, session glob /
+   CLI list, or the per-agent rule — for the agent's *current* CLI.
+2. **Update that agent's `ADAPTER_COMPAT` entry** — the verified version, the
+   `verified_on` date, and the `assumes` line naming what you re-checked. Get the
+   version from `<agent> --version`, and confirm session layout with
+   `scripts/probe-sessions.sh` (reads filenames + mtimes only). Don't guess.
+3. **Update the "Per-agent session facts" table** in ARCHITECTURE.md if the
+   session layout, resume flags or streaming behaviour changed.
+4. **Never invent a version.** If you cannot run the agent, set
+   `verified_agent_version: None` and keep the previous date. An honest
+   `unverified` is the whole point — that is the current state of `hermes`.
+
+### What `ADAPTER_COMPAT` is, and is not
+
+It is a **historical record and a piece of evidence**: "these assumptions were
+true, on this date, for this agent version". It is **not** a guarantee — it is
+never checked against the agent you have installed, and Handover will still run
+against a newer or older agent than the one recorded. That mismatch is exactly
+what a drift report needs to surface, so don't try to "fix" it in code.
+
+**Not wanted:** semver ranges, a version resolver, `--version` probing at
+runtime, or any dependency-management layer. Probing would mean a subprocess per
+agent on every 4s status poll. The declaration plus these tests is the entire
+mechanism.
+
+### The drift guards
+
+Tests fail if the adapter and its declaration disagree, in either direction:
+
+- **Missing declaration** — every `builtin_session_agents()` id, every
+  `agent_catalog()` id, and every agent in `SESSION_ID_RULE_AGENTS` (the
+  per-agent `session_id_from_filename` rules) must have an `ADAPTER_COMPAT`
+  entry. Adding an adapter without one fails `cargo test`.
+- **Orphan declaration** — every `ADAPTER_COMPAT` entry must correspond to an
+  agent Handover actually ships an adapter for, so a removed adapter can't leave
+  a stale "adapter: …" claim behind.
+- **Malformed entry** — non-empty `assumes`, a real ISO date, and unique ids.
+- `AgentMeta.compat` is populated for bundled agents and **absent** for a user's
+  own command agent (which has no bundled assumptions to drift).
+
+If you report an agent that misbehaves, include its `--version` output and the
+`adapter:` line from `handover agents` — that pair is what identifies a stale
+adapter. The *Agent adapter drift* issue template asks for exactly these.
+
 ## Privacy / security expectations for changes
 
 - Exclusions are case-insensitive; file attach opens the **leaf** with `O_NOFOLLOW`.

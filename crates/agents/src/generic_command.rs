@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use handover_config::AgentConfig;
+use handover_config::{compat_for, AgentConfig};
 use handover_core::agent::{
     Agent, AgentError, AgentMeta, AgentRequest, AgentStatus, OutputChannel, OutputSink, SendReceipt,
 };
@@ -117,6 +117,7 @@ impl Agent for GenericCommandAgent {
                 .unwrap_or_else(|| "Custom command agent".to_string()),
             kind: "command".to_string(),
             config_summary: Some(self.config.command.clone()),
+            compat: compat_for(&self.config.id).map(|c| c.summary()),
             demo: self.config.demo,
         }
     }

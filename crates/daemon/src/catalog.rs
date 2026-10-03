@@ -273,6 +273,42 @@ mod tests {
     }
 
     #[test]
+    fn every_gallery_agent_declares_adapter_compat() {
+        // A gallery entry writes a `command` into the user's config from an
+        // agent-specific template, so it carries the same drift risk as the
+        // session catalog: adding one without a declaration must fail here.
+        for agent in agent_catalog() {
+            assert!(
+                handover_config::compat_for(&agent.id).is_some(),
+                "{}: a gallery adapter needs an ADAPTER_COMPAT entry \
+                 (agent id, verified version/date, and the surface it assumes)",
+                agent.id
+            );
+        }
+    }
+
+    #[test]
+    fn no_orphan_adapter_compat_declarations() {
+        // The reverse direction: a declaration for an agent Handover ships no
+        // adapter for. That is stale evidence — it keeps printing an
+        // "adapter: …" line for an agent with no adapter and hides the fact
+        // that the adapter was removed. This lives in the daemon because it is
+        // the only crate that can see both catalogs at once.
+        let gallery = agent_catalog();
+        let sessions = handover_config::builtin_session_agents();
+        let mut bundled: Vec<&str> = gallery.iter().map(|a| a.id.as_str()).collect();
+        bundled.extend(sessions.iter().map(|a| a.id.as_str()));
+        for compat in handover_config::ADAPTER_COMPAT {
+            assert!(
+                bundled.contains(&compat.agent_id),
+                "{}: declared in ADAPTER_COMPAT but is not a bundled adapter — \
+                 remove the declaration or restore the adapter",
+                compat.agent_id
+            );
+        }
+    }
+
+    #[test]
     fn build_command_substitutes_binary() {
         let cmd = build_command("{BIN} -z \"{PROMPT}\"", "/Users/user/.local/bin/hermes");
         assert_eq!(cmd, "/Users/user/.local/bin/hermes -z \"{PROMPT}\"");

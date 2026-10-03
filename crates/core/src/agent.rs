@@ -152,6 +152,14 @@ pub struct AgentMeta {
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config_summary: Option<String>,
+    /// Which agent version this adapter's CLI assumptions were verified
+    /// against, e.g. `"adapter: 0.160.0 (verified 2026-10-04)"`. Present only
+    /// for agents Handover ships an adapter for (see the config crate's
+    /// `adapter` module). A bug report can then be weighed against the agent
+    /// version the user actually has — the manual substitute for probing
+    /// every agent's `--version` on every status poll.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compat: Option<String>,
     #[serde(default)]
     pub demo: bool,
 }

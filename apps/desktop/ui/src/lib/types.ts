@@ -44,6 +44,10 @@ export interface AgentMeta {
   description: string;
   kind: string;
   config_summary?: string | null;
+  /** Which agent version this adapter's CLI assumptions were verified against
+   *  (e.g. `adapter: 0.160.0 (verified 2026-10-04)`). Absent for agents
+   *  Handover ships no adapter for. */
+  compat?: string | null;
   demo?: boolean;
 }
 

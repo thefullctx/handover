@@ -25,5 +25,6 @@ pub use prompt::{render_action_prompt, render_capture_context};
 pub use session::{
     activity_state, freshest_per_agent, hermes_id_timestamp, is_stale, live_sessions_from_cli_rows,
     parse_cli_list_output, scan_live_sessions, session_id_from_filename, ActivityState, CliListRow,
-    LiveSession, SessionDiscovery, SessionSpec, DEFAULT_STALENESS, WORKING_WINDOW,
+    LiveSession, SessionDiscovery, SessionSpec, DEFAULT_STALENESS, SESSION_ID_RULE_AGENTS,
+    WORKING_WINDOW,
 };

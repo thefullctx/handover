@@ -1,0 +1,128 @@
+name: Agent adapter drift
+description: A bundled agent adapter (command, resume, or session discovery) no longer matches the agent's current CLI.
+title: "[agent-drift] <agent id>: <what changed>"
+labels: ["agent-adapter"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An **adapter** is the set of assumptions Handover makes about one agent's
+        CLI — the send command, the resume command, session discovery, and the
+        session-id rules. When an agent changes its CLI, those assumptions can go
+        stale *silently*: the command still exits 0, so Handover reports
+        "Handed off successfully" while the context landed in the wrong place.
+
+        The `adapter:` value below is which agent version the bundled adapter was
+        verified against. Your `--version` is what it actually has. A mismatch is
+        the whole diagnosis.
+
+  - type: input
+    id: agent
+    attributes:
+      label: Which agent
+      placeholder: "e.g. codex, omp, hermes, droid, claude, opencode"
+    validations:
+      required: true
+
+  - type: input
+    id: agent-version
+    attributes:
+      label: The agent's current version
+      description: "Output of `<agent> --version`"
+      placeholder: "e.g. codex-cli 0.163.0"
+    validations:
+      required: true
+
+  - type: input
+    id: adapter-version
+    attributes:
+      label: The `adapter:` line from `handover agents`
+      description: >
+        Run `handover agents` and paste the trailing `adapter: …` field for
+        this agent. It records the version Handover's bundled adapter was
+        verified against.
+
+        If it says `adapter: unverified`, paste that as-is — it means Handover
+        has no confirmed version for this agent, which is itself useful to
+        know. If there is no `adapter:` field at all, say so below: this agent
+        isn't one Handover ships an adapter for (e.g. your own custom command
+        agent), so we're debugging something else.
+      placeholder: "adapter: 0.160.0 (verified 2026-10-04)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: What broke
+      description: >
+        Which of the assumptions Handover makes about this agent is wrong.
+        This tells us which file to open.
+      options:
+        - Fresh send (the handoff itself fails or misbehaves)
+        - Resume into an existing session
+        - Session discovery (no sessions listed, or wrong ids)
+        - Sessions land in the wrong conversation
+        - Provider health / status light
+        - This agent has no `adapter:` line in `handover agents`
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: Include the error text or the wrong session id, if any.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How to reproduce
+      description: "The exact `handover send …` / `handover sessions` commands, or the steps in the UI."
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: cli-changes
+    attributes:
+      label: What changed in the agent's CLI?
+      description: >
+        If you know — a renamed flag, a new session file layout, a changed
+        output format. Link the release notes or changelog if you have them.
+        This is the part that lets us fix the adapter instead of guessing.
+
+  - type: input
+    id: handover-version
+    attributes:
+      label: Handover version
+      description: "Output of `handover status`"
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "macOS 15.5 (arm64)"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for this agent
+          required: false

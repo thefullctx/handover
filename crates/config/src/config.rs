@@ -898,6 +898,17 @@ enabled = true
 
     #[test]
     fn builtin_catalog_entries_are_complete_and_valid() {
+        // Every bundled adapter must declare which agent version its CLI
+        // assumptions were verified against — an adapter without a
+        // declaration is exactly the silent-drift case this guards.
+        for agent in builtin_session_agents() {
+            assert!(
+                crate::adapter::compat_for(&agent.id).is_some(),
+                "{}: a session-catalog adapter needs an ADAPTER_COMPAT entry \
+                 (agent id, verified version/date, and the surface it assumes)",
+                agent.id
+            );
+        }
         let catalog = builtin_session_agents();
         let ids: Vec<&str> = catalog.iter().map(|a| a.id.as_str()).collect();
         assert_eq!(ids, vec!["claude", "codex", "droid", "omp", "hermes"]);
