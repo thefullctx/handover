@@ -816,6 +816,35 @@ pub fn shared(daemon: Daemon) -> SharedDaemon {
 
 #[cfg(test)]
 mod tests {
+    /// Spawns a live child process under a distinctive, deliberately LONG
+    /// name (well past Linux's 15-char `comm` limit) and returns it.
+    ///
+    /// It has to be a script, not a copied binary. On Ubuntu 26.04 `/bin/sleep`
+    /// resolves to `/usr/lib/cargo/bin/coreutils/sleep` — a coreutils multicall
+    /// binary that dispatches on `argv[0]` — so a copy under another name exits
+    /// immediately with "unknown program". A dead probe reads as "not running",
+    /// which failed these tests on 26.04 without any of the detection code
+    /// having changed.
+    ///
+    /// The long name is the point: `pgrep -x` compares against `comm`, which
+    /// the kernel truncates, so these probes are found by the `ps` command-line
+    /// scan — the fallback path production actually depends on.
+    #[cfg(unix)]
+    fn spawn_probe() -> (std::path::PathBuf, std::process::Child) {
+        let probe = std::env::temp_dir().join(format!("ho-probe-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&probe, "#!/bin/sh\nsleep 30\n").expect("write probe script");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&probe).expect("stat probe").permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&probe, perms).expect("chmod probe");
+        }
+        let child = std::process::Command::new(&probe)
+            .spawn()
+            .expect("spawn probe");
+        (probe, child)
+    }
     use super::*;
     use handover_config::AgentConfig;
     use handover_core::capture::{Capture, SourceKind};
@@ -2579,12 +2608,7 @@ mod tests {
         // even though production checks always target OTHER processes.)
         #[cfg(unix)]
         {
-            let probe = std::env::temp_dir().join(format!("ho-probe-{}", uuid::Uuid::new_v4()));
-            std::fs::copy("/bin/sleep", &probe).expect("copy sleep for probe");
-            let child = std::process::Command::new(&probe)
-                .arg("30")
-                .spawn()
-                .expect("spawn probe");
+            let (probe, child) = spawn_probe();
             assert!(
                 wait_until_running(&probe.to_string_lossy()),
                 "a live child process must be seen as running"
@@ -2610,12 +2634,7 @@ mod tests {
         // binary itself would false-fail.)
         #[cfg(unix)]
         {
-            let probe = std::env::temp_dir().join(format!("ho-probe-{}", uuid::Uuid::new_v4()));
-            std::fs::copy("/bin/sleep", &probe).expect("copy sleep for probe");
-            let child = std::process::Command::new(&probe)
-                .arg("30")
-                .spawn()
-                .expect("spawn probe");
+            let (probe, child) = spawn_probe();
             let mut config = Config::default_config();
             config.agents.push(AgentConfig {
                 id: "probe".into(),
