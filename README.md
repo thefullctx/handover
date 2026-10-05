@@ -13,6 +13,16 @@ running, and keep chatting with it in a couple of keystrokes.
 
 The target is 2–3 keystrokes from seeing a problem to a successful handoff.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/demo-dark.gif">
+    <source media="(prefers-color-scheme: light)" srcset="docs/demo-light.gif">
+    <img src="docs/demo-light.gif" width="520" alt="Handover in use: ⌘⇧A opens the palette, a build log is dropped onto it, Claude Code is picked from the agent list, and the reply streams back.">
+  </picture>
+  <br>
+  <sub>Handover in use</sub>
+</p>
+
 ---
 
 ## What Handover does
