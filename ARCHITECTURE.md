@@ -347,14 +347,13 @@ CLI drift**: keep it in sync with `SESSION_ID_RULES` in
 | codex | `~/.codex/sessions/<Y>/<M>/<D>/rollout-<ts>-<uuid>.jsonl` (trailing uuid = id) | `codex resume <id>` / `codex resume` (freshest) | `codex exec resume <id>` / `codex exec --last` | exec streams, `-o json` |
 | droid | `~/.factory/sessions/<enc-cwd>/<uuid>.jsonl` (per-session `.settings.json` sibling) | `droid --resume [id]` (`-r`, defaults to last modified) | `droid exec -s <id> "{P}"` / `droid exec -s <id> -f file` | `-o stream-json` / `-o json` |
 | omp | `~/.omp/agent/sessions/<enc-cwd>/<ts>_<sessionId>.jsonl` (id after last `_`) + breadcrumbs `terminal-sessions/<tid>` | `omp -r <id>` (id prefix OK, picker if omitted) / `omp -c` | `omp -p "{P}" -r <id>` / `omp -p "{P}" -c` | `-p` streams, `--print-thoughts` |
-| hermes | SQLite `~/.hermes/state.db` (FTS5) — no fs glob; use `hermes sessions list`. Id format `20260812_130220_dbf5cf` | `hermes --resume <id>` (`-r`) / `--continue` (`-c`) by id or title | `hermes chat -q "{P}" --resume <id>` / `--resume latest --in <dir>` | `chat -q` streams |
+| hermes | SQLite `~/.hermes/state.db` (FTS5) — no fs glob; use `hermes sessions list`. Id format `20260812_130220_dbf5cf` | `hermes --resume <id>` (`-r`) / `--continue` (`-c`) by id or title | `hermes chat -Q -q "{P}" --resume <id>` / `--resume latest --in <dir>` | `chat -q` streams; `-Q` prints only the final reply |
 
 **Verified 2026-10-04** (`<agent> --version` + `scripts/probe-sessions.sh`, filenames
 and mtimes only): claude 2.1.288, codex-cli 0.160.0, droid 0.233.0, omp 18.5.0,
-opencode 2.0.19. **hermes is the exception** — its launcher could not be run
-(the bundled virtualenv is gone), so `hermes --version` and
-`hermes sessions list` both fail and its row above remains the 2026-08-14 probe,
-unconfirmed. Per-agent versions are recorded in `ADAPTER_COMPAT`
+opencode 2.0.19. **hermes** was verified separately on 2026-10-06 (0.21.5),
+once its launcher could be run again; `hermes chat -q` now seeds an interactive
+session on a TTY, so headless resumes pass `-Q` (or `--oneshot`). Per-agent versions are recorded in `ADAPTER_COMPAT`
 (`handover-config`); see "Adapter compatibility" below.
 
 #### Adapter compatibility
@@ -385,7 +384,7 @@ would break. It is surfaced as `AgentMeta.compat` and printed by
 
 This is a declaration, not a version-management system: no ranges, no resolver,
 no dependency graph. An unverified adapter says `unverified` rather than
-guessing (currently `hermes`, whose launcher could not be run). The enforcement
+guessing (none currently; `hermes` was until 2026-10-06). The enforcement
 is in tests — see CONTRIBUTING.md, "Updating an agent adapter".
 
 Key findings from the verification:

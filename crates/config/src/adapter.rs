@@ -114,18 +114,16 @@ pub const ADAPTER_COMPAT: &[AdapterCompat] = &[
         assumes: "one-shot send only — no session adapter; model endpoint in \
                   ~/.config/opencode/opencode.json(c) as `baseURL`",
     },
-    // Hermes could not be run on the verification machine: its launcher points
-    // at a deleted virtualenv, so `hermes --version` and `hermes sessions list`
-    // both fail. The assumptions below come from the 2026-08-14 probe and are
-    // explicitly NOT re-verified — hence `None` rather than a guessed version.
     AdapterCompat {
         agent_id: "hermes",
-        verified_agent_version: None,
-        verified_on: "2026-08-14",
+        verified_agent_version: Some("0.21.5"),
+        verified_on: "2026-10-06",
         assumes: "sessions live in SQLite (~/.hermes/state.db, no filesystem glob) \
-                  and are listed with `hermes sessions list`; ids are \
-                  <YYYYMMDD>_<HHMMSS>_<hex> and encode their own timestamp; resume \
-                  via `hermes chat -q \"{PROMPT}\" --resume <id>`",
+                  and are listed with `hermes sessions list` (id is the last \
+                  column, recency as `9h ago`); ids are <YYYYMMDD>_<HHMMSS>_<hex> \
+                  and encode their own timestamp; resume via \
+                  `hermes chat -Q -q \"{PROMPT}\" --resume <id>` (`-Q` keeps `-q` \
+                  one-shot on a TTY, where bare `-q` now seeds an interactive session)",
     },
 ];
 
@@ -263,9 +261,13 @@ mod tests {
     #[test]
     fn unverified_adapters_say_so_in_the_summary() {
         // An unverified adapter must never read like a verified one.
-        let hermes = compat_for("hermes").expect("hermes adapter");
-        assert_eq!(hermes.verified_agent_version, None);
-        let summary = hermes.summary();
+        let unverified = AdapterCompat {
+            agent_id: "never-run",
+            verified_agent_version: None,
+            verified_on: "2026-08-14",
+            assumes: "whatever the last probe saw",
+        };
+        let summary = unverified.summary();
         assert!(
             summary.contains("unverified"),
             "unverified adapter must say so: {summary}"

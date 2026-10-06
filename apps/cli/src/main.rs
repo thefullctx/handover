@@ -368,11 +368,24 @@ fn cmd_approve(args: &[String]) -> Result<(), String> {
 
 /// "2:14pm"-style local time for a session listing (parse-fail-safe).
 fn session_time(iso: &str) -> String {
+    session_time_at(iso, chrono::Local::now())
+}
+
+/// `3:34PM` for a session active today, `Oct 3` for an earlier day, so an old
+/// session never reads as if it just ran.
+fn session_time_at<Tz: chrono::TimeZone>(iso: &str, now: chrono::DateTime<Tz>) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
     let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(iso) else {
         return "?".to_string();
     };
-    let local = parsed.with_timezone(&chrono::Local);
-    local.format("%-I:%M%p").to_string()
+    let local = parsed.with_timezone(&now.timezone());
+    if local.date_naive() == now.date_naive() {
+        local.format("%-I:%M%p").to_string()
+    } else {
+        local.format("%b %-d").to_string()
+    }
 }
 
 fn cmd_send(args: &[String]) -> Result<(), String> {
@@ -679,7 +692,7 @@ or lower the agent's timeout_secs in config.",
 
 #[cfg(test)]
 mod tests {
-    use super::trailing_columns;
+    use super::{session_time_at, trailing_columns};
 
     #[test]
     fn compat_stays_in_the_fifth_column() {
@@ -691,5 +704,15 @@ mod tests {
         );
         // No summary: an empty column keeps compat where scripts expect it.
         assert_eq!(trailing_columns("", "adapter: 1.0"), "\t\tadapter: 1.0");
+    }
+
+    #[test]
+    fn session_time_shows_the_date_for_earlier_days() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-10-06T15:34:00+04:00").unwrap();
+        assert_eq!(session_time_at("2026-10-06T06:25:30+04:00", now), "6:25AM");
+        assert_eq!(session_time_at("2026-10-03T15:34:00+04:00", now), "Oct 3");
+        // Same instant, other offset: still judged in `now`'s time zone.
+        assert_eq!(session_time_at("2026-10-05T21:00:00+00:00", now), "1:00AM");
+        assert_eq!(session_time_at("not a time", now), "?");
     }
 }
