@@ -23,10 +23,10 @@
   start an agent in a terminal and watch it flip red→green without closing anything.
 - **Chat** — the composer opens clean (the clipboard is never captured; dropped text/files
   pre-fill it, editable, never sent silently): `Enter` sends verbatim (`Shift+Enter` is a
-  newline), the reply streams
-  inline, and every message resumes the same session so the agent keeps the conversation
-  context. While waiting you see a quiet thinking animation; CLI session banners are
-  filtered out of the stream.
+  newline), and every message resumes the same session so the agent keeps the
+  conversation context. While waiting you see only a quiet thinking animation, then the
+  finished reply; progress text, thoughts and CLI banners the agent prints along the way
+  are never shown in the thread.
 
 The first time you chat with an agent it becomes your default — next time you can go straight
 through: `⌘⇧A → Enter → Enter`.
@@ -36,7 +36,8 @@ through: `⌘⇧A → Enter → Enter`.
 You are never left wondering what happened after the handoff:
 
 - **Sending** — the in-flight turn shows a quiet thinking animation and a live elapsed timer
-  (`Codex is working · 12s`), with the reply streaming inline as it arrives. Press `esc` to dismiss
+  (`Codex is working · 12s`); the reply appears once the agent finishes. The raw output
+  stream is under **Show activity** if you want it. Press `esc` to dismiss
   the palette — the handoff keeps running and a **native macOS notification** still fires on
   completion (the banner belongs to Handover; clicking it activates the app, not Script Editor).
 - **Activity** — every exchange carries its own collapsible **Show activity** section holding the raw agent output plus a phase

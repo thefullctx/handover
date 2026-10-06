@@ -17,7 +17,7 @@ The target is 2–3 keystrokes from seeing a problem to a successful handoff.
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/demo-dark.gif">
     <source media="(prefers-color-scheme: light)" srcset="docs/demo-light.gif">
-    <img src="docs/demo-light.gif" width="520" alt="Handover in use: ⌘⇧A opens the palette, a build log is dropped onto it, Claude Code is picked from the agent list, and the reply streams back.">
+    <img src="docs/demo-light.gif" width="520" alt="Handover in use: ⌘⇧A opens the palette, a build log is dropped onto it, Claude Code is picked from the agent list, and the reply comes back.">
   </picture>
   <br>
   <sub>Handover in use</sub>
@@ -39,7 +39,8 @@ The target is 2–3 keystrokes from seeing a problem to a successful handoff.
    installed but idle, **amber** when its model provider is unreachable.
 5. The chat opens beneath the picker, resuming the agent's live session when it has one.
    `Enter` sends your message verbatim.
-6. The reply streams back into the thread. After the first time it's
+6. A thinking animation shows while the agent works, then its reply lands in the
+   thread. After the first time it's
    `⌘⇧A → Enter → Enter`.
 
 Everything runs locally. Nothing is uploaded anywhere unless the agent you choose does so.

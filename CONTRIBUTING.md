@@ -153,7 +153,7 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
    verbatim
    `ask` sends with the explicit session id, clean composer (no clipboard capture),
    Enter-sends / Shift+Enter-newline keys,
-   composer pre-fill from dropped context, in-thread failures and inline streaming,
+   composer pre-fill from dropped context, in-thread failures, the thinking-only in-flight bubble,
    blocked-session Approve/Deny (explicit press, verified vs fail-soft notes), history
    (open / retry / another agent), first-run onboarding, drop capture, and the `?`
    cheat sheet.
@@ -215,8 +215,8 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
    - status dots are honest: a green light means the agent's process is actually running
      (or its session is actively writing), never just a leftover session file
    - action + agent selection shows a spinner while the agent runs (UI stays responsive)
-   - the palette stays open during the handoff with a live elapsed timer and the reply
-     streaming inline; on completion the finished turn stays in the thread (you can keep
+   - the palette stays open during the handoff with a live elapsed timer and only the
+     thinking animation (no streamed text); on completion the finished turn stays in the thread (you can keep
      chatting), and the full result panel (Copy answer / Copy prompt / Close) opens from
      *Recent handoffs*
    - tray menu → *Recent Handoffs* lists the last 10 handoffs; clicking a row reopens that

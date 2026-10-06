@@ -517,7 +517,7 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     expect(document.querySelectorAll(".chat-bubble.user")).toHaveLength(1);
   });
 
-  it("streams the reply inline while a message is in flight", async () => {
+  it("shows only the thinking state while a message is in flight", async () => {
     const pending = deferred<unknown>();
     const user = await renderApp(makePayload(), [], { send_handoff: pending.promise });
     await chooseAgent(user, /Codex/);
@@ -535,9 +535,16 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     tauri.listeners["handoff:output"]({
       payload: { id: "handoff-0", stream: "stdout", chunk: "Working through" },
     });
+    // Streamed text is measured but never shown in the bubble: the user sees
+    // the thinking animation until the finished reply replaces it.
     await waitFor(() =>
-      expect(screen.getByTestId("chat-live")).toHaveTextContent(/Working through/)
+      expect(screen.getByTestId("chat-activity-output-volume")).toHaveTextContent("15 B")
     );
+    const bubble = inflight.querySelector(".chat-bubble.agent") as HTMLElement;
+    expect(within(bubble).getByTestId("chat-thinking")).toBeInTheDocument();
+    expect(bubble).not.toHaveTextContent(/Working through/);
+    // The raw stream is only in the collapsed activity panel.
+    expect(within(inflight).getByTestId("chat-activity")).not.toHaveAttribute("open");
 
     pending.resolve(makeOutcome());
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
@@ -723,7 +730,7 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
       payload: { id: "handoff-2", stream: "stdout", chunk: "FRESH OUTPUT" },
     });
     await waitFor(() =>
-      expect(screen.getByTestId("chat-live")).toHaveTextContent(/FRESH OUTPUT/)
+      expect(screen.getByTestId("chat-activity-output-volume")).toHaveTextContent(/12 B/)
     );
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
   });

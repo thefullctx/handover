@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanReply, filterLiveStream } from "../lib/format";
+import { cleanReply } from "../lib/format";
 
 describe("cleanReply — CLI/TUI chrome stripped to plain chat text", () => {
   it("reduces Hermes' full TUI dump to just the answer", () => {
@@ -94,26 +94,5 @@ Messages:       10 (5 user, 0 tool calls)`;
   it("returns empty for empty input", () => {
     expect(cleanReply("")).toBe("");
     expect(cleanReply("   \n\n  ")).toBe("");
-  });
-});
-
-describe("filterLiveStream — banner noise never reaches the streaming bubble", () => {
-  it("strips the exact resume banner deca saw (stdout + stderr lines)", () => {
-    const raw = `↻ Resumed session 20260823_134105_802edf "Friendly greeting #8" (21 user messages, 352 total messages)\nModel restored from session: x-preview-f-free (opencode-free)`;
-    expect(filterLiveStream(raw)).toBe("");
-  });
-
-  it("keeps genuine reply text and drops banners around it", () => {
-    const raw = `↪ restored workspace dir: /Users/user\n↻ Resumed session abc "t" (1 user messages, 2 total messages)\nModel restored from session: local-model-v2\nWorking on it — found the bug.\nFix incoming.`;
-    expect(filterLiveStream(raw)).toBe("Working on it — found the bug.\nFix incoming.");
-  });
-
-  it("never eats a reply that merely mentions the words", () => {
-    const raw = "The session resumed session state successfully.";
-    expect(filterLiveStream(raw)).toBe(raw);
-  });
-
-  it("passes plain streaming text through untouched", () => {
-    expect(filterLiveStream("Thinking…\nLine two")).toBe("Thinking…\nLine two");
   });
 });
