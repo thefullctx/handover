@@ -251,8 +251,8 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
      the toggle hides the agent from the dropdown while keeping its config)
    - unavailable agent shows a clear "not available" state (no crash, no stack trace)
    - excluded files (e.g. a `.env`) and symlinks to secrets are refused
-   - CLI: `status`, `agents` (each row ends with the `adapter:` line naming the
-     agent version that adapter was verified against), `actions`, `send`,
+   - CLI: `status`, `agents` (rows for bundled agents end with the `adapter:`
+     line naming the agent version that adapter was verified against), `actions`, `send`,
      `sessions`, `attach`, `approve`, and
      `cat x | handover` / `printf x | handover`
    - unauthenticated `POST` to the API is rejected; authenticated CLI still works

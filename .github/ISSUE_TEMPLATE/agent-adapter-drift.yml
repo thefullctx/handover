@@ -46,7 +46,8 @@ body:
         has no confirmed version for this agent, which is itself useful to
         know. If there is no `adapter:` field at all, say so below: this agent
         isn't one Handover ships an adapter for (e.g. your own custom command
-        agent), so we're debugging something else.
+        agent, or a bundled agent whose `command` runs a different program),
+        so we're debugging something else.
       placeholder: "adapter: 0.160.0 (verified 2026-10-04)"
     validations:
       required: true
