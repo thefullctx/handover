@@ -25,3 +25,20 @@ updates:
       prefix: "deps"
     labels:
       - "dependencies"
+  # Only the Tauri JS packages: they must stay on the same major/minor as the
+  # Rust `tauri` crate above (the Tauri CLI reports a mismatch otherwise), and
+  # without this entry the cargo side moved on alone.
+  - package-ecosystem: "npm"
+    directory: "/apps/desktop/ui"
+    schedule:
+      interval: "weekly"
+    allow:
+      - dependency-name: "@tauri-apps/*"
+    groups:
+      tauri:
+        patterns:
+          - "@tauri-apps/*"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"

@@ -167,11 +167,12 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
    ```
 
    Or split terminals: Vite in `apps/desktop/ui`, `cargo run` in `apps/desktop/src-tauri`.
-   Note: the Tauri CLI runs `beforeDevCommand` / `beforeBuildCommand` from the app
-   directory it detects, and that depends on where you launch it. From `src-tauri` it is
-   `apps/desktop`, which is what `npm --prefix ui run …` expects. From `apps/desktop`
-   the CLI finds `ui/package.json` and runs the hooks from `ui/` instead, so
-   `--prefix ui` resolves to `ui/ui` and fails with `ENOENT … ui/ui/package.json`.
+   Either `apps/desktop` or `apps/desktop/src-tauri` works as the launch directory.
+   `beforeDevCommand` / `beforeBuildCommand` set `cwd: "../ui"`, which Tauri resolves
+   against `src-tauri`, so the hooks run from `ui/` wherever the CLI starts. (The
+   directory the CLI would otherwise pick depends on where it is launched from.)
+   Keep `@tauri-apps/api` / `@tauri-apps/cli` on the same major/minor as the Rust
+   `tauri` crate; launched from `apps/desktop`, the CLI reports a mismatch.
 
    Global hotkey: use `on_shortcut` only (it already registers). Never call
    `register()` for the same accelerator — Carbon rejects the duplicate.

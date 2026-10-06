@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.handover.desktop",
   "build": {
-    "beforeDevCommand": "npm --prefix ui run dev",
+    "beforeDevCommand": { "script": "npm run dev", "cwd": "../ui" },
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm --prefix ui run build",
+    "beforeBuildCommand": { "script": "npm run build", "cwd": "../ui" },
     "frontendDist": "../ui/dist"
   },
   "app": {
