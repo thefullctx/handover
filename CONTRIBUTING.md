@@ -328,7 +328,7 @@ Do all of this in the **same** change:
    session layout, resume flags or streaming behaviour changed.
 4. **Never invent a version.** If you cannot run the agent, set
    `verified_agent_version: None` and keep the previous date. An honest
-   `unverified` is the whole point — that is the current state of `hermes`.
+   `unverified` is the whole point (`hermes` was in that state until 2026-10-06).
 
 ### What `ADAPTER_COMPAT` is, and is not
 
