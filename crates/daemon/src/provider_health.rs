@@ -232,49 +232,62 @@ impl ProviderHealth {
 /// Per-agent config locations. Each parser is tiny and fail-soft: any surprise
 /// means "unknown", never an error shown to the user.
 fn sniff_endpoint(agent_id: &str, home: &Path) -> Option<ProviderEndpoint> {
-    match agent_id {
-        "hermes" => {
-            // 1) The FRESHEST live session's actual endpoint (Hermes records
-            //    `billing_base_url` per session in state.db). A resumed
-            //    session restores ITS provider — config defaults don't apply,
-            //    so this is the truthful answer when a session exists.
-            if let Some(ep) = sqlite_last_billing_base_url(
-                &home.join(".hermes/state.db"),
-                PROBE_TIMEOUT.as_millis() as u64 * 4,
-            ) {
-                return ProviderEndpoint::parse(&ep);
-            }
-            // 2) Fall back to the configured default (what fresh sends use).
-            hermes_ambient_endpoint(home)
-        }
-        "codex" => {
-            // TOML: `model_provider = "<id>"` then `[model_providers.<id>]`
-            // with `base_url`. Fall back to the built-in OpenAI endpoint only
-            // when explicitly configured — default codex needs no probe here.
-            let text = read(home.join(".codex/config.toml"))?;
-            let provider = find_toml_string(&text, "model_provider")?;
-            let needle = "base_url".to_string();
-            let section = format!("model_providers.{provider}");
-            let url = toml_section_value(&text, &section, &needle)?;
-            ProviderEndpoint::parse(url)
-        }
-        "opencode" => {
-            // OpenCode reads config from ~/.config/opencode/opencode.json(.c).
-            for name in ["opencode.jsonc", "opencode.json"] {
-                if let Some(text) = read(home.join(".config/opencode").join(name)) {
-                    if let Some(url) = find_json_string(&text, "baseURL")
-                        .or_else(|| find_json_string(&text, "base_url"))
-                    {
-                        if let Some(ep) = ProviderEndpoint::parse(&url) {
-                            return Some(ep);
-                        }
-                    }
+    let (_, sniff) = ENDPOINT_SNIFFERS.iter().find(|(id, _)| *id == agent_id)?;
+    sniff(home)
+}
+
+type EndpointSniffer = fn(&Path) -> Option<ProviderEndpoint>;
+
+/// Agents whose provider config Handover knows how to read. Every listed agent
+/// must have an `ADAPTER_COMPAT` declaration (a test enforces it), so a new
+/// config location cannot be added without one.
+const ENDPOINT_SNIFFERS: &[(&str, EndpointSniffer)] = &[
+    ("hermes", hermes_endpoint),
+    ("codex", codex_endpoint),
+    ("opencode", opencode_endpoint),
+];
+
+fn hermes_endpoint(home: &Path) -> Option<ProviderEndpoint> {
+    // 1) The FRESHEST live session's actual endpoint (Hermes records
+    //    `billing_base_url` per session in state.db). A resumed
+    //    session restores ITS provider — config defaults don't apply,
+    //    so this is the truthful answer when a session exists.
+    if let Some(ep) = sqlite_last_billing_base_url(
+        &home.join(".hermes/state.db"),
+        PROBE_TIMEOUT.as_millis() as u64 * 4,
+    ) {
+        return ProviderEndpoint::parse(&ep);
+    }
+    // 2) Fall back to the configured default (what fresh sends use).
+    hermes_ambient_endpoint(home)
+}
+
+fn codex_endpoint(home: &Path) -> Option<ProviderEndpoint> {
+    // TOML: `model_provider = "<id>"` then `[model_providers.<id>]`
+    // with `base_url`. Fall back to the built-in OpenAI endpoint only
+    // when explicitly configured — default codex needs no probe here.
+    let text = read(home.join(".codex/config.toml"))?;
+    let provider = find_toml_string(&text, "model_provider")?;
+    let needle = "base_url".to_string();
+    let section = format!("model_providers.{provider}");
+    let url = toml_section_value(&text, &section, &needle)?;
+    ProviderEndpoint::parse(url)
+}
+
+fn opencode_endpoint(home: &Path) -> Option<ProviderEndpoint> {
+    // OpenCode reads config from ~/.config/opencode/opencode.json(.c).
+    for name in ["opencode.jsonc", "opencode.json"] {
+        if let Some(text) = read(home.join(".config/opencode").join(name)) {
+            if let Some(url) =
+                find_json_string(&text, "baseURL").or_else(|| find_json_string(&text, "base_url"))
+            {
+                if let Some(ep) = ProviderEndpoint::parse(&url) {
+                    return Some(ep);
                 }
             }
-            None
         }
-        _ => None,
     }
+    None
 }
 
 fn read(p: PathBuf) -> Option<String> {
@@ -491,6 +504,18 @@ fn resolve_sqlite3() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_endpoint_sniffer_agent_declares_adapter_compat() {
+        // Fifth drift surface: a provider-config location is an assumption
+        // about one agent's CLI, so it needs an ADAPTER_COMPAT declaration.
+        for (agent_id, _) in ENDPOINT_SNIFFERS {
+            assert!(
+                handover_config::compat_for(agent_id).is_some(),
+                "{agent_id}: has a provider-config sniffer but no ADAPTER_COMPAT entry"
+            );
+        }
+    }
 
     #[test]
     fn parses_base_urls_into_host_port() {

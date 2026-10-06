@@ -81,7 +81,7 @@ Only needed if you are building from source.
 cargo build --workspace
 
 # Desktop app (Tauri). This builds the React UI first, then compiles the app.
-cd apps/desktop && ./ui/node_modules/.bin/tauri build
+cd apps/desktop/src-tauri && ../ui/node_modules/.bin/tauri build
 ```
 
 The CLI lands at `target/debug/handover`, the daemon at `target/debug/handover-daemon`,

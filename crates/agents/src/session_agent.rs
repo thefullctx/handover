@@ -176,12 +176,18 @@ fn extract_new_session_id(agent_id: &str, stdout: &str, requested: &str) -> Opti
     hinted
 }
 
+type IdShape = fn(&str) -> bool;
+
+/// Agents whose session ids are not UUIDs, with the shape check for each.
+/// Every listed agent must have an `ADAPTER_COMPAT` declaration (a test
+/// enforces it), so a new id shape cannot be added without one.
+const ID_SHAPES: &[(&str, IdShape)] = &[("hermes", is_hermes_id)];
+
 /// True when a token looks like this agent's session id.
 fn matches_id_shape(agent_id: &str, token: &str) -> bool {
-    if agent_id == "hermes" {
-        is_hermes_id(token)
-    } else {
-        is_uuid(token)
+    match ID_SHAPES.iter().find(|(id, _)| *id == agent_id) {
+        Some((_, is_shape)) => is_shape(token),
+        None => is_uuid(token),
     }
 }
 
@@ -218,6 +224,18 @@ mod tests {
     use handover_core::agent::{AgentRequest, SessionTarget};
     use handover_core::capture::{Capture, SourceKind};
     use std::collections::HashMap;
+
+    #[test]
+    fn every_id_shape_agent_declares_adapter_compat() {
+        // Fourth drift surface: a non-UUID id shape is an assumption about one
+        // agent's CLI, so it needs an ADAPTER_COMPAT declaration like any other.
+        for (agent_id, _) in ID_SHAPES {
+            assert!(
+                handover_config::compat_for(agent_id).is_some(),
+                "{agent_id}: has a session-id shape but no ADAPTER_COMPAT entry"
+            );
+        }
+    }
 
     fn config_with(command: &str, resume: Option<&str>, session_glob: Option<&str>) -> AgentConfig {
         AgentConfig {

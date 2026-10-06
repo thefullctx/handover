@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use handover_config::{compat_for, AgentConfig, AgentKind};
+use handover_config::{compat_for_config, AgentConfig, AgentKind};
 use handover_core::agent::{
     Agent, AgentError, AgentMetaStatus, AgentRequest, AgentStatus, SendReceipt,
 };
@@ -115,7 +115,7 @@ impl Agent for UnsupportedAgent {
             description: self.config.description.clone().unwrap_or_default(),
             kind: "openai_compatible".to_string(),
             config_summary: None,
-            compat: compat_for(&self.config.id).map(|c| c.summary()),
+            compat: compat_for_config(&self.config).map(|c| c.summary()),
             demo: self.config.demo,
         }
     }
@@ -185,6 +185,7 @@ mod tests {
         // against, so a drift report can be weighed against what the user has.
         let mut bundled = config("codex");
         bundled.kind = AgentKind::Session;
+        bundled.command = "codex exec --skip-git-repo-check \"{PROMPT}\"".into();
         bundled.session_glob = Some("~/.codex/sessions/*/*/*/*.jsonl".into());
         bundled.resume_command = Some("codex exec resume {SESSION}".into());
         let registry = AgentRegistry::from_configs(&[bundled]);
@@ -200,14 +201,19 @@ mod tests {
     #[test]
     fn meta_has_no_compat_for_a_users_own_command_agent() {
         // A hand-written command agent carries no bundled assumptions, so it
-        // must not be given a declaration it never earned.
-        let registry = AgentRegistry::from_configs(&[config("my-own-agent")]);
-        let meta = registry.get("my-own-agent").expect("registered").meta();
-        assert!(
-            meta.compat.is_none(),
-            "unexpected compat: {:?}",
-            meta.compat
-        );
+        // must not be given a declaration it never earned — even when it
+        // reuses a bundled agent's id but runs a different program.
+        let mut lookalike = config("claude");
+        lookalike.command = "./my-script.sh \"{PROMPT}\"".into();
+        let registry = AgentRegistry::from_configs(&[config("my-own-agent"), lookalike]);
+        for id in ["my-own-agent", "claude"] {
+            let meta = registry.get(id).expect("registered").meta();
+            assert!(
+                meta.compat.is_none(),
+                "{id}: unexpected compat: {:?}",
+                meta.compat
+            );
+        }
     }
 
     #[test]

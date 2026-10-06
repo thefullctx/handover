@@ -3,9 +3,9 @@
 //! An "adapter" in Handover is not code — it is the set of assumptions Handover
 //! makes about one agent's CLI, spread across five tables keyed by the agent id
 //! string: the session catalog (`builtin_session_agents`), the gallery catalog
-//! (`agent_catalog`), the session-id rules (`core::session::session_id_from_filename`),
-//! the rotated-id shapes (`agents::session_agent::matches_id_shape`) and the
-//! provider-config locations (`daemon::provider_health::sniff_endpoint`).
+//! (`agent_catalog`), the session-id rules (`core::session::SESSION_ID_RULES`),
+//! the rotated-id shapes (`agents::session_agent::ID_SHAPES`) and the
+//! provider-config locations (`daemon::provider_health::ENDPOINT_SNIFFERS`).
 //!
 //! When an agent changes its CLI, those assumptions go stale *silently*: a
 //! renamed resume flag or a changed session filename still exits 0, so the
@@ -31,6 +31,8 @@
 //!
 //! Verified on-machine by running each agent's `--version` and
 //! `scripts/probe-sessions.sh` (filenames + mtimes only).
+
+use crate::AgentConfig;
 
 /// What Handover assumes about one agent's CLI, and when that was last checked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,9 +71,9 @@ impl AdapterCompat {
 
 /// The declaration for every agent Handover ships an adapter for.
 ///
-/// A new catalog entry — or a new arm in `session_id_from_filename`,
-/// `matches_id_shape` or `sniff_endpoint` — must be added here too; the
-/// drift-guard tests fail otherwise.
+/// A new catalog entry — or a new row in `SESSION_ID_RULES`, `ID_SHAPES` or
+/// `ENDPOINT_SNIFFERS` — must be added here too; the drift-guard tests fail
+/// otherwise.
 pub const ADAPTER_COMPAT: &[AdapterCompat] = &[
     AdapterCompat {
         agent_id: "claude",
@@ -134,6 +136,28 @@ pub fn compat_for(agent_id: &str) -> Option<&'static AdapterCompat> {
     ADAPTER_COMPAT.iter().find(|c| c.agent_id == agent_id)
 }
 
+/// The declaration that applies to a configured agent: its id has a bundled
+/// adapter *and* its command runs that agent's own binary (bare or by path).
+///
+/// The id alone is not enough. A user's own command agent that happens to be
+/// called `claude` but runs `./my-script.sh` makes none of the CLI assumptions
+/// the declaration describes, so labelling it "verified" would be false.
+/// Every bundled adapter's binary is named after its agent id.
+pub fn compat_for_config(config: &AgentConfig) -> Option<&'static AdapterCompat> {
+    let compat = compat_for(&config.id)?;
+    (command_program(&config.command) == Some(config.id.as_str())).then_some(compat)
+}
+
+/// File name of the program a shell command runs, skipping leading `VAR=value`
+/// assignments and surrounding quotes: `FOO=1 "/usr/bin/codex" exec` -> `codex`.
+fn command_program(command: &str) -> Option<&str> {
+    let token = command
+        .split_whitespace()
+        .find(|t| !t.contains('=') || t.starts_with(['"', '\'', '/']))?
+        .trim_matches(['"', '\'']);
+    std::path::Path::new(token).file_name()?.to_str()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,14 +205,14 @@ mod tests {
 
     #[test]
     fn session_id_rule_agents_all_declare_compat() {
-        // Third drift surface: `core::session::session_id_from_filename` keys
-        // per-agent filename→id rules off the agent id. Every id with a
-        // non-default rule must be declared, so adding an arm there without a
-        // declaration fails CI instead of drifting silently.
-        for agent_id in handover_core::session::SESSION_ID_RULE_AGENTS {
+        // Third drift surface: `core::session::SESSION_ID_RULES` holds the
+        // per-agent filename→id rules. Every agent with a rule must be
+        // declared, so adding one without a declaration fails CI instead of
+        // drifting silently.
+        for (agent_id, _) in handover_core::session::SESSION_ID_RULES {
             assert!(
                 compat_for(agent_id).is_some(),
-                "{agent_id}: has a custom session-id rule but no ADAPTER_COMPAT entry"
+                "{agent_id}: has a session-id rule but no ADAPTER_COMPAT entry"
             );
         }
     }
@@ -199,6 +223,41 @@ mod tests {
         // Agents with no bundled adapter (a user's own command agent) have no
         // declaration — and must not be invented for them.
         assert!(compat_for("my-own-agent").is_none());
+    }
+
+    #[test]
+    fn command_program_finds_the_binary_name() {
+        assert_eq!(command_program("codex exec \"{PROMPT}\""), Some("codex"));
+        assert_eq!(
+            command_program("/Users/me/.local/bin/omp -p \"{PROMPT}\""),
+            Some("omp")
+        );
+        assert_eq!(
+            command_program("FOO=1 \"/usr/bin/claude\" -p x"),
+            Some("claude")
+        );
+        assert_eq!(
+            command_program("./my-script.sh --x=1"),
+            Some("my-script.sh")
+        );
+        assert_eq!(command_program("   "), None);
+    }
+
+    #[test]
+    fn compat_applies_only_when_the_command_runs_the_bundled_binary() {
+        let mut config = crate::builtin_session_agents()
+            .into_iter()
+            .find(|a| a.id == "claude")
+            .expect("bundled claude");
+        assert!(compat_for_config(&config).is_some(), "bundled command");
+
+        config.command = "/opt/homebrew/bin/claude -p \"{PROMPT}\"".into();
+        assert!(compat_for_config(&config).is_some(), "binary by full path");
+
+        // A user's own agent that merely reuses the id runs none of the CLI
+        // the declaration describes.
+        config.command = "./my-script.sh \"{PROMPT}\"".into();
+        assert!(compat_for_config(&config).is_none(), "different binary");
     }
 
     #[test]

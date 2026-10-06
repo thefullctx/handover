@@ -58,7 +58,7 @@ cargo build --workspace
 # Desktop app. `tauri build` / `tauri dev` run the UI build for you
 # (beforeBuildCommand / beforeDevCommand), so a separate `npm run build`
 # is only needed when you want the UI bundle without the Rust compile.
-cd apps/desktop && ./ui/node_modules/.bin/tauri dev
+cd apps/desktop/src-tauri && ../ui/node_modules/.bin/tauri dev
 ```
 
 macOS: `xcode-select --install`. Linux: install the
@@ -161,16 +161,17 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
 6. **Desktop app (dev)** — UI on Vite; Rust via Tauri:
 
    ```bash
-   # From apps/desktop (so src-tauri/tauri.conf.json is discovered)
-   cd apps/desktop
-   ./ui/node_modules/.bin/tauri dev
+   # From src-tauri, the same directory the release workflow uses
+   cd apps/desktop/src-tauri
+   ../ui/node_modules/.bin/tauri dev
    ```
 
    Or split terminals: Vite in `apps/desktop/ui`, `cargo run` in `apps/desktop/src-tauri`.
-   Note: `beforeDevCommand` / `beforeBuildCommand` run from `apps/desktop` (the config's
-   parent directory), **not** from `apps/desktop/ui` — that is why they are written as
-   `npm --prefix ui run …`. A bare `npm run build` there walks up to the repo root and
-   fails with `ENOENT: no such file or directory, open '…/handover/package.json'`.
+   Note: the Tauri CLI runs `beforeDevCommand` / `beforeBuildCommand` from the app
+   directory it detects, and that depends on where you launch it. From `src-tauri` it is
+   `apps/desktop`, which is what `npm --prefix ui run …` expects. From `apps/desktop`
+   the CLI finds `ui/package.json` and runs the hooks from `ui/` instead, so
+   `--prefix ui` resolves to `ui/ui` and fails with `ENOENT … ui/ui/package.json`.
 
    Global hotkey: use `on_shortcut` only (it already registers). Never call
    `register()` for the same accelerator — Carbon rejects the duplicate.
@@ -250,8 +251,8 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
      the toggle hides the agent from the dropdown while keeping its config)
    - unavailable agent shows a clear "not available" state (no crash, no stack trace)
    - excluded files (e.g. a `.env`) and symlinks to secrets are refused
-   - CLI: `status`, `agents` (each row ends with the `adapter:` line naming the
-     agent version that adapter was verified against), `actions`, `send`,
+   - CLI: `status`, `agents` (rows for bundled agents end with the `adapter:`
+     line naming the agent version that adapter was verified against), `actions`, `send`,
      `sessions`, `attach`, `approve`, and
      `cat x | handover` / `printf x | handover`
    - unauthenticated `POST` to the API is rejected; authenticated CLI still works
@@ -275,9 +276,9 @@ id string:
 |---|---|---|
 | Session discovery + resume command | `crates/config/src/config.rs` | `builtin_session_agents()` |
 | Binary name, install paths, send command | `crates/daemon/src/catalog.rs` | `agent_catalog()` |
-| How a session filename becomes a session id | `crates/core/src/session.rs` | `session_id_from_filename()` |
-| Whether an id is hermes-style or a uuid | `crates/agents/src/session_agent.rs` | `matches_id_shape()` |
-| Where the agent's model endpoint is configured | `crates/daemon/src/provider_health.rs` | `sniff_endpoint()` |
+| How a session filename becomes a session id | `crates/core/src/session.rs` | `SESSION_ID_RULES` |
+| Whether an id is hermes-style or a uuid | `crates/agents/src/session_agent.rs` | `ID_SHAPES` |
+| Where the agent's model endpoint is configured | `crates/daemon/src/provider_health.rs` | `ENDPOINT_SNIFFERS` |
 
 You normally touch only the first two. See ARCHITECTURE.md, "Adapter
 compatibility", for the design.
@@ -347,15 +348,17 @@ mechanism.
 Tests fail if the adapter and its declaration disagree, in either direction:
 
 - **Missing declaration** — every `builtin_session_agents()` id, every
-  `agent_catalog()` id, and every agent in `SESSION_ID_RULE_AGENTS` (the
-  per-agent `session_id_from_filename` rules) must have an `ADAPTER_COMPAT`
-  entry. Adding an adapter without one fails `cargo test`.
+  `agent_catalog()` id, and every agent in the per-agent tables
+  `SESSION_ID_RULES` (filename→session id), `ID_SHAPES` (non-UUID session ids)
+  and `ENDPOINT_SNIFFERS` (provider-config locations) must have an
+  `ADAPTER_COMPAT` entry. Adding an adapter without one fails `cargo test`.
 - **Orphan declaration** — every `ADAPTER_COMPAT` entry must correspond to an
   agent Handover actually ships an adapter for, so a removed adapter can't leave
   a stale "adapter: …" claim behind.
 - **Malformed entry** — non-empty `assumes`, a real ISO date, and unique ids.
 - `AgentMeta.compat` is populated for bundled agents and **absent** for a user's
-  own command agent (which has no bundled assumptions to drift).
+  own command agent (which has no bundled assumptions to drift), including one
+  that reuses a bundled id but runs a different program (`compat_for_config`).
 
 If you report an agent that misbehaves, include its `--version` output and the
 `adapter:` line from `handover agents` — that pair is what identifies a stale

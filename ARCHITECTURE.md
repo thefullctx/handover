@@ -337,7 +337,7 @@ The per-agent facts discovery is built on, verified on-machine 2026-08-14
 (web research + `scripts/probe-sessions.sh`, which reads filenames + mtimes
 only) and **re-verified 2026-10-04** (see "Adapter compatibility" below for the
 per-agent verified versions). This table is the **maintenance point for agent
-CLI drift**: keep it in sync with `session_id_from_filename()` in
+CLI drift**: keep it in sync with `SESSION_ID_RULES` in
 `handover-core`, `builtin_session_agents()` in `handover-config`, and the
 `ADAPTER_COMPAT` declaration.
 
@@ -366,9 +366,9 @@ about one agent's CLI, spread across five tables keyed by the agent id string:
 |---|---|
 | Session catalog (`command`, `resume_command`, discovery) | `builtin_session_agents()` in `handover-config` |
 | Gallery catalog (`binary_name`, `candidate_paths`, `command_template`) | `agent_catalog()` in `handover-daemon` |
-| Session-id rules (filename → id) | `session_id_from_filename()` in `handover-core` |
-| Rotated-id shapes (hermes ts-hex vs uuid) | `matches_id_shape()` in `handover-agents` |
-| Provider-config locations | `sniff_endpoint()` in `handover-daemon` |
+| Session-id rules (filename → id) | `SESSION_ID_RULES` in `handover-core` |
+| Rotated-id shapes (hermes ts-hex vs uuid) | `ID_SHAPES` in `handover-agents` |
+| Provider-config locations | `ENDPOINT_SNIFFERS` in `handover-daemon` |
 
 When an agent changes its CLI, those assumptions go stale **silently**: a
 renamed resume flag or a changed session filename still exits 0, so the handoff
