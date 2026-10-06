@@ -3,9 +3,9 @@
 //! An "adapter" in Handover is not code — it is the set of assumptions Handover
 //! makes about one agent's CLI, spread across five tables keyed by the agent id
 //! string: the session catalog (`builtin_session_agents`), the gallery catalog
-//! (`agent_catalog`), the session-id rules (`core::session::session_id_from_filename`),
-//! the rotated-id shapes (`agents::session_agent::matches_id_shape`) and the
-//! provider-config locations (`daemon::provider_health::sniff_endpoint`).
+//! (`agent_catalog`), the session-id rules (`core::session::SESSION_ID_RULES`),
+//! the rotated-id shapes (`agents::session_agent::ID_SHAPES`) and the
+//! provider-config locations (`daemon::provider_health::ENDPOINT_SNIFFERS`).
 //!
 //! When an agent changes its CLI, those assumptions go stale *silently*: a
 //! renamed resume flag or a changed session filename still exits 0, so the
@@ -69,9 +69,9 @@ impl AdapterCompat {
 
 /// The declaration for every agent Handover ships an adapter for.
 ///
-/// A new catalog entry — or a new arm in `session_id_from_filename`,
-/// `matches_id_shape` or `sniff_endpoint` — must be added here too; the
-/// drift-guard tests fail otherwise.
+/// A new catalog entry — or a new row in `SESSION_ID_RULES`, `ID_SHAPES` or
+/// `ENDPOINT_SNIFFERS` — must be added here too; the drift-guard tests fail
+/// otherwise.
 pub const ADAPTER_COMPAT: &[AdapterCompat] = &[
     AdapterCompat {
         agent_id: "claude",
@@ -181,14 +181,14 @@ mod tests {
 
     #[test]
     fn session_id_rule_agents_all_declare_compat() {
-        // Third drift surface: `core::session::session_id_from_filename` keys
-        // per-agent filename→id rules off the agent id. Every id with a
-        // non-default rule must be declared, so adding an arm there without a
-        // declaration fails CI instead of drifting silently.
-        for agent_id in handover_core::session::SESSION_ID_RULE_AGENTS {
+        // Third drift surface: `core::session::SESSION_ID_RULES` holds the
+        // per-agent filename→id rules. Every agent with a rule must be
+        // declared, so adding one without a declaration fails CI instead of
+        // drifting silently.
+        for (agent_id, _) in handover_core::session::SESSION_ID_RULES {
             assert!(
                 compat_for(agent_id).is_some(),
-                "{agent_id}: has a custom session-id rule but no ADAPTER_COMPAT entry"
+                "{agent_id}: has a session-id rule but no ADAPTER_COMPAT entry"
             );
         }
     }

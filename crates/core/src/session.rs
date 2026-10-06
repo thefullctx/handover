@@ -123,41 +123,56 @@ pub fn is_stale(updated_at: DateTime<Utc>, now: DateTime<Utc>, staleness: Durati
     now - updated_at > staleness
 }
 
-/// Agent ids that need a rule other than "the filename stem IS the id" in
-/// [`session_id_from_filename`].
+/// A per-agent rule turning a transcript filename stem into a session id.
+pub type SessionIdRule = fn(&str) -> Option<String>;
+
+/// Per-agent filename→id rules used by [`session_id_from_filename`]; an agent
+/// not listed takes the filename stem as its id.
 ///
-/// Exported so the config crate can assert every one of these has an
-/// `ADAPTER_COMPAT` declaration: an arm added to the per-agent match without
-/// declaring which agent version it was verified against is the silent-drift
-/// case, and this is what makes CI fail on it.
-pub const SESSION_ID_RULE_AGENTS: &[&str] = &["claude", "droid", "codex", "omp"];
+/// This table is the only place a per-agent rule can live, and it is exported
+/// so the config crate can assert every listed agent has an `ADAPTER_COMPAT`
+/// declaration. Adding a rule therefore fails CI until it is declared, rather
+/// than drifting silently.
+pub const SESSION_ID_RULES: &[(&str, SessionIdRule)] = &[
+    // claude / droid: <uuid>.jsonl -> uuid
+    ("claude", stem_is_id),
+    ("droid", stem_is_id),
+    ("codex", codex_rollout_id),
+    ("omp", omp_id),
+];
+
+fn stem_is_id(stem: &str) -> Option<String> {
+    Some(stem.to_string())
+}
+
+/// codex: rollout-<ts>-<uuid>.jsonl -> trailing uuid. The timestamp is 7
+/// dash-separated parts after "rollout-"; the uuid is the last 5 parts
+/// (8-4-4-4-12).
+fn codex_rollout_id(stem: &str) -> Option<String> {
+    let rest = stem.strip_prefix("rollout-")?;
+    let parts: Vec<&str> = rest.split('-').collect();
+    if parts.len() < 5 {
+        return None;
+    }
+    Some(parts[parts.len() - 5..].join("-"))
+}
+
+/// omp: <timestamp>_<sessionId>.jsonl -> part after the last '_'
+fn omp_id(stem: &str) -> Option<String> {
+    stem.rsplit_once('_').map(|(_, id)| id.to_string())
+}
 
 /// Extracts the session id from a session transcript filename.
 ///
-/// Per-agent rules (see the Phase 0 facts table in ARCHITECTURE.md, "Per-agent
-/// session facts", and the verified versions in `config::ADAPTER_COMPAT`). This
-/// is a maintenance point for agent CLI drift — keep all three in sync: an arm
-/// added here must be listed in [`SESSION_ID_RULE_AGENTS`] and declared in
-/// `ADAPTER_COMPAT`.
+/// Per-agent rules live in [`SESSION_ID_RULES`] (see the Phase 0 facts table in
+/// ARCHITECTURE.md, "Per-agent session facts", and the verified versions in
+/// `config::ADAPTER_COMPAT`). This is a maintenance point for agent CLI drift —
+/// keep all three in sync.
 pub fn session_id_from_filename(agent_id: &str, path: &Path) -> Option<String> {
     let stem = path.file_name()?.to_str()?.strip_suffix(".jsonl")?;
-    match agent_id {
-        // claude / droid: <uuid>.jsonl -> uuid
-        "claude" | "droid" => Some(stem.to_string()),
-        // codex: rollout-<ts>-<uuid>.jsonl -> trailing uuid
-        // timestamp is 7 dash-separated parts after "rollout-"; the uuid
-        // is the last 5 parts (8-4-4-4-12).
-        "codex" => {
-            let rest = stem.strip_prefix("rollout-")?;
-            let parts: Vec<&str> = rest.split('-').collect();
-            if parts.len() < 5 {
-                return None;
-            }
-            Some(parts[parts.len() - 5..].join("-"))
-        }
-        // omp: <timestamp>_<sessionId>.jsonl -> part after the last '_'
-        "omp" => stem.rsplit_once('_').map(|(_, id)| id.to_string()),
-        _ => Some(stem.to_string()),
+    match SESSION_ID_RULES.iter().find(|(id, _)| *id == agent_id) {
+        Some((_, rule)) => rule(stem),
+        None => stem_is_id(stem),
     }
 }
 
@@ -489,49 +504,17 @@ mod tests {
     // -- session_id_from_filename -----------------------------------------
 
     #[test]
-    fn session_id_rule_agents_stay_listed_and_correct() {
-        // `SESSION_ID_RULE_AGENTS` exists so the config crate can assert every
-        // id handled by the per-agent match has an ADAPTER_COMPAT declaration.
-        // If it drifts from the arms below, that guard silently stops
-        // guarding — so assert the listed ids still extract correctly.
+    fn session_id_rules_are_unique_and_unlisted_agents_use_the_stem() {
+        // A duplicate id would make the second rule unreachable.
+        let mut ids: Vec<&str> = SESSION_ID_RULES.iter().map(|(id, _)| *id).collect();
+        let total = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), total, "duplicate agent id in SESSION_ID_RULES");
+
         let rollout = Path::new(
             "/x/sessions/2026/08/14/rollout-2026-08-14T00-27-18-019ffd73-95b5-7240-b6bb-a39b1952730b.jsonl",
         );
-        // codex is the one rule that genuinely differs from the default
-        // (filename stem) — it must never drop out of the list.
-        assert!(
-            SESSION_ID_RULE_AGENTS.contains(&"codex"),
-            "codex has a custom session-id rule and must stay listed"
-        );
-        assert_eq!(
-            session_id_from_filename("codex", rollout).as_deref(),
-            Some("019ffd73-95b5-7240-b6bb-a39b1952730b")
-        );
-
-        let uuid_path = Path::new("/x/projects/proj1/3b2c1a4e-8f6d-4b1e-9c2a-5d4f3e2b1a0c.jsonl");
-        // claude / droid take the stem as-is; codex only ever sees `rollout-`
-        // files, so a bare uuid is correctly rejected rather than guessed at.
-        for agent_id in ["claude", "droid"] {
-            assert!(
-                SESSION_ID_RULE_AGENTS.contains(&agent_id),
-                "{agent_id}: has an explicit session-id arm and must stay listed"
-            );
-            assert_eq!(
-                session_id_from_filename(agent_id, uuid_path).as_deref(),
-                Some("3b2c1a4e-8f6d-4b1e-9c2a-5d4f3e2b1a0c"),
-                "{agent_id}: must keep taking the filename stem as the id"
-            );
-        }
-        assert_eq!(
-            session_id_from_filename("codex", uuid_path),
-            None,
-            "codex must not invent an id from a non-rollout filename"
-        );
-        for agent_id in SESSION_ID_RULE_AGENTS {
-            assert!(!agent_id.is_empty(), "listed agent ids must be non-empty");
-        }
-
-        // An agent NOT listed falls through to the default (stem) rule.
         assert_eq!(
             session_id_from_filename("opencode", rollout).as_deref(),
             Some("rollout-2026-08-14T00-27-18-019ffd73-95b5-7240-b6bb-a39b1952730b"),

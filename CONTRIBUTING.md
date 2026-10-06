@@ -276,9 +276,9 @@ id string:
 |---|---|---|
 | Session discovery + resume command | `crates/config/src/config.rs` | `builtin_session_agents()` |
 | Binary name, install paths, send command | `crates/daemon/src/catalog.rs` | `agent_catalog()` |
-| How a session filename becomes a session id | `crates/core/src/session.rs` | `session_id_from_filename()` |
-| Whether an id is hermes-style or a uuid | `crates/agents/src/session_agent.rs` | `matches_id_shape()` |
-| Where the agent's model endpoint is configured | `crates/daemon/src/provider_health.rs` | `sniff_endpoint()` |
+| How a session filename becomes a session id | `crates/core/src/session.rs` | `SESSION_ID_RULES` |
+| Whether an id is hermes-style or a uuid | `crates/agents/src/session_agent.rs` | `ID_SHAPES` |
+| Where the agent's model endpoint is configured | `crates/daemon/src/provider_health.rs` | `ENDPOINT_SNIFFERS` |
 
 You normally touch only the first two. See ARCHITECTURE.md, "Adapter
 compatibility", for the design.
@@ -348,9 +348,10 @@ mechanism.
 Tests fail if the adapter and its declaration disagree, in either direction:
 
 - **Missing declaration** — every `builtin_session_agents()` id, every
-  `agent_catalog()` id, and every agent in `SESSION_ID_RULE_AGENTS` (the
-  per-agent `session_id_from_filename` rules) must have an `ADAPTER_COMPAT`
-  entry. Adding an adapter without one fails `cargo test`.
+  `agent_catalog()` id, and every agent in the per-agent tables
+  `SESSION_ID_RULES` (filename→session id), `ID_SHAPES` (non-UUID session ids)
+  and `ENDPOINT_SNIFFERS` (provider-config locations) must have an
+  `ADAPTER_COMPAT` entry. Adding an adapter without one fails `cargo test`.
 - **Orphan declaration** — every `ADAPTER_COMPAT` entry must correspond to an
   agent Handover actually ships an adapter for, so a removed adapter can't leave
   a stale "adapter: …" claim behind.
