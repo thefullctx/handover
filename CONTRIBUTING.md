@@ -114,6 +114,15 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
      `Config::save()` / `Config::ensure()` when exercising persistence in unit tests.
    - A regression test asserts `set_preference` does not mutate the real platform file.
 
+   **Tests share one process environment.** `cargo test` runs a crate's tests in parallel
+   threads, so `std::env::set_var` is visible to every test running at that moment.
+   - Prefer passing the value in (as `catalog::resolve_binary_in` takes a `PATH`) over
+     mutating `PATH`/`HOME`.
+   - When a test must mutate, take the daemon's crate-wide `tests::lock_env()` and hold a
+     `tests::EnvGuard` so the old values come back even on panic.
+   - Never drop `/bin` from `PATH`: tests that spawn `sh` don't take the lock, and lose
+     `sh` mid-run. (That is what made three `runner` tests fail ~1 run in 10.)
+
 2. **Vertical slice smoke test** — verifies daemon → API → CLI → demo agent end-to-end
    (throwaway `HOME`, temporary port, API token under that home, cleans up after itself).
    The script preserves `CARGO_HOME` / `RUSTUP_HOME` so rustup still works after

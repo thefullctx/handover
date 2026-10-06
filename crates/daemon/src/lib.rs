@@ -1972,8 +1972,10 @@ mod tests {
     }
 
     /// Serializes tests that mutate process-global env vars (PATH, HOME,
-    /// FAKE_TMUX_SINK). Only tests that MUTATE the environment take this
-    /// lock; everything else runs freely in parallel.
+    /// FAKE_TMUX_SINK), crate-wide: `catalog` tests take it too. Only tests
+    /// that MUTATE the environment take this lock; everything else runs
+    /// freely in parallel, so a mutation must keep `/bin` on PATH (tests that
+    /// spawn `sh` read it concurrently) — or better, inject the value instead.
     ///
     /// Acquired poison-tolerant on purpose: a panic inside a holder must not
     /// fail every later env-dependent test. The real hazard a panic leaves
@@ -1982,7 +1984,7 @@ mod tests {
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     /// Acquires [`ENV_LOCK`], tolerating poison (see the lock's doc).
-    fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+    pub(crate) fn lock_env() -> std::sync::MutexGuard<'static, ()> {
         ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1996,14 +1998,14 @@ mod tests {
     /// the next env-dependent test then failed (e.g. PATH pointing at a
     /// deleted temp dir, HOME at a removed home), panicked in turn, and the
     /// cascade spread PoisonErrors to every serialized test.
-    struct EnvGuard {
+    pub(crate) struct EnvGuard {
         path: Option<std::ffi::OsString>,
         home: Option<std::ffi::OsString>,
         fake_tmux_sink: Option<std::ffi::OsString>,
     }
 
     impl EnvGuard {
-        fn capture() -> Self {
+        pub(crate) fn capture() -> Self {
             Self {
                 path: std::env::var_os("PATH"),
                 home: std::env::var_os("HOME"),
