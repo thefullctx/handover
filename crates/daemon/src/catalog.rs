@@ -150,6 +150,17 @@ pub fn gallery(configured_ids: &[String]) -> Vec<GalleryAgent> {
 /// candidate paths, then a PATH lookup for the bare name. Returns the
 /// absolute path when found and executable.
 pub fn resolve_binary(agent: &CatalogAgent, hint: Option<&str>) -> Option<PathBuf> {
+    resolve_binary_in(agent, hint, std::env::var_os("PATH").as_deref())
+}
+
+/// [`resolve_binary`] against an explicit `PATH` value. Tests use this
+/// instead of mutating the process-global `PATH`, which other tests in the
+/// same binary read concurrently when they spawn `sh`.
+fn resolve_binary_in(
+    agent: &CatalogAgent,
+    hint: Option<&str>,
+    path_var: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
     if let Some(hint) = hint {
         let hint = hint.trim();
         if !hint.is_empty() {
@@ -158,7 +169,7 @@ pub fn resolve_binary(agent: &CatalogAgent, hint: Option<&str>) -> Option<PathBu
             }
             // A bare name (e.g. `omp`) → PATH lookup.
             if !hint.contains('/') {
-                if let Some(p) = find_on_path(hint) {
+                if let Some(p) = find_on_path(hint, path_var) {
                     return Some(p);
                 }
             }
@@ -169,7 +180,7 @@ pub fn resolve_binary(agent: &CatalogAgent, hint: Option<&str>) -> Option<PathBu
             return Some(p);
         }
     }
-    find_on_path(&agent.binary_name)
+    find_on_path(&agent.binary_name, path_var)
 }
 
 /// Checks a single path (expanding `~`), returning it when it exists and is
@@ -183,10 +194,9 @@ fn resolve_one(path: &str) -> Option<PathBuf> {
     }
 }
 
-/// Searches `PATH` for an executable named `name`.
-fn find_on_path(name: &str) -> Option<PathBuf> {
-    let path_var = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path_var) {
+/// Searches the `PATH` value `path_var` for an executable named `name`.
+fn find_on_path(name: &str, path_var: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    for dir in std::env::split_paths(path_var?) {
         let candidate = dir.join(name);
         if is_executable_file(&candidate) {
             return Some(candidate);
@@ -256,7 +266,7 @@ pub fn resolve_explicit(input: &str) -> Option<PathBuf> {
         return Some(p);
     }
     if !input.contains('/') {
-        return find_on_path(input);
+        return find_on_path(input, std::env::var_os("PATH").as_deref());
     }
     None
 }
@@ -327,12 +337,10 @@ mod tests {
         assert_eq!(cmd, "\"/Users/x/my\\$dir/\\`weird\\`/omp\" \"{PROMPT}\"");
     }
 
-    /// Serializes tests that mutate the global `PATH`/`HOME` env vars.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[test]
     fn resolves_fake_binary_via_path() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        // An explicit PATH, not `set_var`: replacing the process PATH with a
+        // dir that lacks /bin made concurrent tests fail to spawn `sh`.
         let dir = std::env::temp_dir().join(format!("ho-catalog-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let bin = dir.join("fake-agent");
@@ -343,8 +351,7 @@ mod tests {
             std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
 
-        let old_path = std::env::var_os("PATH");
-        std::env::set_var("PATH", &dir);
+        let path = Some(dir.as_os_str());
         let agent = CatalogAgent {
             id: "fake".into(),
             name: "Fake".into(),
@@ -355,28 +362,33 @@ mod tests {
             timeout_secs: 60,
             auth_marker: None,
         };
-        assert_eq!(resolve_binary(&agent, None).as_deref(), Some(bin.as_path()));
+        assert_eq!(
+            resolve_binary_in(&agent, None, path).as_deref(),
+            Some(bin.as_path())
+        );
         // A wrong explicit hint falls back to candidates + PATH.
         assert_eq!(
-            resolve_binary(&agent, Some("/nonexistent/fake-agent")).as_deref(),
+            resolve_binary_in(&agent, Some("/nonexistent/fake-agent"), path).as_deref(),
             Some(bin.as_path())
         );
         // An explicit valid path wins.
         assert_eq!(
-            resolve_binary(&agent, Some(bin.to_str().unwrap())).as_deref(),
+            resolve_binary_in(&agent, Some(bin.to_str().unwrap()), path).as_deref(),
             Some(bin.as_path())
         );
+        // Without a PATH the bare name is not found.
+        assert!(resolve_binary_in(&agent, None, None).is_none());
 
-        match old_path {
-            Some(p) => std::env::set_var("PATH", p),
-            None => std::env::remove_var("PATH"),
-        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn resolves_tilde_candidate_path() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        // HOME has no injectable equivalent here (`~` expands via the real
+        // home dir), so take the crate-wide env lock and restore-on-Drop guard
+        // shared with the lib.rs tests that also change HOME.
+        let _lock = crate::tests::lock_env();
+        let _env = crate::tests::EnvGuard::capture();
         let dir = std::env::temp_dir().join(format!("ho-catalog-home-{}", uuid::Uuid::new_v4()));
         let bin = dir.join("fake-bin");
         std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
@@ -387,7 +399,6 @@ mod tests {
             std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
 
-        let old_home = std::env::var_os("HOME");
         std::env::set_var("HOME", &dir);
         let agent = CatalogAgent {
             id: "fake".into(),
@@ -401,10 +412,6 @@ mod tests {
         };
         assert_eq!(resolve_binary(&agent, None).as_deref(), Some(bin.as_path()));
 
-        match old_home {
-            Some(h) => std::env::set_var("HOME", h),
-            None => std::env::remove_var("HOME"),
-        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
