@@ -58,7 +58,7 @@ cargo build --workspace
 # Desktop app. `tauri build` / `tauri dev` run the UI build for you
 # (beforeBuildCommand / beforeDevCommand), so a separate `npm run build`
 # is only needed when you want the UI bundle without the Rust compile.
-cd apps/desktop && ./ui/node_modules/.bin/tauri dev
+cd apps/desktop/src-tauri && ../ui/node_modules/.bin/tauri dev
 ```
 
 macOS: `xcode-select --install`. Linux: install the
@@ -161,16 +161,17 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
 6. **Desktop app (dev)** — UI on Vite; Rust via Tauri:
 
    ```bash
-   # From apps/desktop (so src-tauri/tauri.conf.json is discovered)
-   cd apps/desktop
-   ./ui/node_modules/.bin/tauri dev
+   # From src-tauri, the same directory the release workflow uses
+   cd apps/desktop/src-tauri
+   ../ui/node_modules/.bin/tauri dev
    ```
 
    Or split terminals: Vite in `apps/desktop/ui`, `cargo run` in `apps/desktop/src-tauri`.
-   Note: `beforeDevCommand` / `beforeBuildCommand` run from `apps/desktop` (the config's
-   parent directory), **not** from `apps/desktop/ui` — that is why they are written as
-   `npm --prefix ui run …`. A bare `npm run build` there walks up to the repo root and
-   fails with `ENOENT: no such file or directory, open '…/handover/package.json'`.
+   Note: the Tauri CLI runs `beforeDevCommand` / `beforeBuildCommand` from the app
+   directory it detects, and that depends on where you launch it. From `src-tauri` it is
+   `apps/desktop`, which is what `npm --prefix ui run …` expects. From `apps/desktop`
+   the CLI finds `ui/package.json` and runs the hooks from `ui/` instead, so
+   `--prefix ui` resolves to `ui/ui` and fails with `ENOENT … ui/ui/package.json`.
 
    Global hotkey: use `on_shortcut` only (it already registers). Never call
    `register()` for the same accelerator — Carbon rejects the duplicate.
