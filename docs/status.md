@@ -43,9 +43,10 @@ Implemented and verified end-to-end:
   the palette and `handover approve` in the CLI
 - ✅ Live chat in the palette: threaded conversation that resumes the SAME session (explicit
   `session_id` on every message), messages delivered verbatim (no action preamble — the
-  exact text you type is exactly what the agent receives), inline streaming + per-turn
+  exact text you type is exactly what the agent receives), thinking animation until the
+  finished reply + per-turn
   "Prompt that was sent" transparency
-- ✅ 202 Rust unit tests + 69 Vitest/Testing Library tests covering the keyboard-first flows
+- ✅ 218 Rust unit tests + 65 Vitest/Testing Library tests covering the keyboard-first flows
   and the session/approval/chat/activity layers; `cargo clippy --workspace --all-targets` is
   warning-free (enforced in CI — see [.github/workflows/ci.yml](../.github/workflows/ci.yml))
 - ✅ Production Content Security Policy (never disabled); prompt temp-cache dir overridable with `HANDOVER_PROMPT_CACHE_DIR` for sandboxed CI

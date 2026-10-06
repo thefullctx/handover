@@ -1150,7 +1150,6 @@ export default function App() {
                   session={chatLiveSession}
                   turns={chatTurns}
                   sendingText={chatPendingText}
-                  liveText={live}
                   elapsed={elapsed}
                   activity={activity}
                   draft={draft}

@@ -163,7 +163,8 @@ in-session. Two deliberate design points:
 - **Transparency**: every turn shows the exact rendered prompt under an expandable
   "Prompt that was sent" disclosure — nothing the agent receives is hidden.
 
-Failures render in-thread; while a message is in flight the reply streams inline.
+Failures render in-thread; while a message is in flight the bubble shows only a thinking
+animation, and the finished reply replaces it.
 
 ### Generic command agent
 
@@ -229,7 +230,8 @@ a quiet phase timeline inside a collapsible **Show activity** section, next to r
 measurements: prompt size (measured in Rust), time to first response and output volume
 (measured from the event stream). Nothing here is estimated or animated on a timer; a stat
 that has not been observed yet renders as `—`, not `0`. The in-flight bubble shows a live
-elapsed timer and the streaming reply. Escape dismisses the palette but never cancels a
+elapsed timer and a thinking animation only — streamed text (progress, thoughts, partial
+reply) feeds the measurements and the collapsed activity output, never the bubble. Escape dismisses the palette but never cancels a
 handoff in flight.
 
 **Each exchange owns its own panel.** The live panel belongs to the turn in flight; when
@@ -522,7 +524,7 @@ green/red/amber, with `blocked · approve?` or the provider-down reason as the o
 sub-lines) directly above `ChatView` (threaded chat that resumes the agent's live
 session, composer opens clean — the clipboard is never read, only dropped text/files
 pre-fill it — `Enter` sends / `Shift+Enter` newline, inline Approve/Deny for blocked
-sessions, and CLI session banners filtered out of the streamed reply). Picking an agent
+sessions, and a thinking-only in-flight bubble — no streamed text in the thread). Picking an agent
 swaps the thread in place; there is no separate landing screen (`ChatHome` was removed).
 `ResultPanel`, `HistoryList`, `WelcomeOverlay`, `ShortcutSheet` and `ErrorState`
 round out the rest, all over a typed IPC layer (`lib/tauri.ts`), with a design-token CSS

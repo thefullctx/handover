@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../Icons";
-import { byteLength, captureSnippet, cleanReply, failureMessage, fmtBytes, fmtDuration, fmtMs, filterLiveStream, PHASE_STEPS, phaseIndex, sessionTimeLabel, truncate } from "../lib/format";
+import { byteLength, captureSnippet, cleanReply, failureMessage, fmtBytes, fmtDuration, fmtMs, PHASE_STEPS, phaseIndex, sessionTimeLabel, truncate } from "../lib/format";
 import type { AgentMeta, ApprovalResult, ChatTurn, HandoffActivity, LiveSession } from "../lib/types";
 import ApprovalCard from "./ApprovalCard";
 
@@ -17,8 +17,6 @@ interface Props {
   /** Text of the message currently in flight (renders the in-flight user
    *  bubble). `null` = nothing sending. */
   sendingText: string | null;
-  /** Streamed agent output while a message is in flight. */
-  liveText: string;
   elapsed: number;
   /** Real measurements for the collapsible "Show activity" section (phase
    *  timeline, prompt size, time to first response, output volume). `null`
@@ -136,7 +134,6 @@ export default function ChatView({
   session,
   turns,
   sendingText,
-  liveText,
   elapsed,
   activity = null,
   draft,
@@ -164,7 +161,7 @@ export default function ChatView({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [turns.length, liveText, sending]);
+  }, [turns.length, sending]);
 
   const send = () => {
     const t = text.trim();
@@ -287,18 +284,14 @@ export default function ChatView({
                   <span className="status-dot ok" />
                   {agent.name} is working{elapsed > 0 ? ` · ${elapsed}s` : ""}
                 </span>
-                {/* Banner noise (session-resume lines) is filtered out — the
-                    smooth thinking state stays up until real reply text. */}
-                {filterLiveStream(liveText).trim() ? (
-                  <span className="chat-text live" data-testid="chat-live">
-                    {truncate(filterLiveStream(liveText), 8000)}
-                  </span>
-                ) : (
-                  <span className="chat-thinking">
-                    <span className="pixel-loader" aria-hidden="true" />
-                    Thinking…
-                  </span>
-                )}
+                {/* Only the thinking state while in flight: streamed text
+                    (progress, thoughts, partial reply) is never shown here.
+                    The finished reply replaces this bubble; the raw stream
+                    stays available in the activity panel. */}
+                <span className="chat-thinking" data-testid="chat-thinking">
+                  <span className="pixel-loader" aria-hidden="true" />
+                  Thinking…
+                </span>
               </div>
               {/* The in-flight turn owns the live panel; once it completes the
                   measurements are snapshotted onto the turn itself. */}

@@ -79,13 +79,6 @@ const REASONING_HEADER_RE = /^[┌╭][─━]*\s*reasoning/i;
  *  dir: …`, `⚡ YOLO mode …`. */
 const CHROME_LEAD_RE =
   /^(?:[↻↪⚡▶✔✖•>\s-]*)?(query:|initializing agent|resumed session|yolo mode|restored workspace)/i;
-/** Session-resume banner lines the Hermes CLI prints (stdout + stderr) before
- *  any reply content. Shown raw in the live stream they read like errors;
- *  filtered, the smooth "Thinking…" state stays up until real text arrives.
- *  `Model restored from session:` is matched loosely so provider strings with
- *  slashes/parens never need their own rule. */
-const STREAM_BANNER_RE =
-  /^(?:[↻↪⚡▶✔✖•\s-])*(?:resumed session\b|model restored from session\b|restored workspace)/i;
 /** Trailing session-info footer (`Resume this session with:` / `Session:` …). */
 const SESSION_FOOTER_RE =
   /^(resume this session|hermes (--resume|-c )|(session|title|duration|messages):)/i;
@@ -144,20 +137,6 @@ export function cleanReply(raw: string): string {
     body.push(line.replace(new RegExp(`^[${BOX_CHARS}]+|[${BOX_CHARS}]+$`, "g"), "").trimEnd());
   }
   return body.join("\n").trim().replace(/\n{3,}/g, "\n\n");
-}
-
-/**
- * Filters session-resume banner noise out of the LIVE stream (the raw stdout/
- * stderr the CLI prints while working). Banner lines are dropped wherever
- * they appear — only genuine reply text is ever shown streaming, so the
- * smooth "Thinking…" state stays up until real content arrives. Line-level:
- * a banner mid-chunk is removed; partial lines pass through untouched.
- */
-export function filterLiveStream(raw: string): string {
-  return raw
-    .split("\n")
-    .filter((line) => !STREAM_BANNER_RE.test(line.trim()))
-    .join("\n");
 }
 
 export function truncate(text: string, max: number): string {
