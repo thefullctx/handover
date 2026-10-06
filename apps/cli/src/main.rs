@@ -168,26 +168,28 @@ fn cmd_agents() -> Result<(), String> {
         // against the version the user actually has.
         let compat = item["meta"]["compat"].as_str().unwrap_or("");
         println!(
-            "{id}\t{name}\t[{kind}]\t{}: {}{}{}",
+            "{id}\t{name}\t[{kind}]\t{}: {}{}",
             if available {
                 "available"
             } else {
                 "unavailable"
             },
             item["status"]["detail"].as_str().unwrap_or(""),
-            if summary.is_empty() {
-                String::new()
-            } else {
-                format!("\t{summary}")
-            },
-            if compat.is_empty() {
-                String::new()
-            } else {
-                format!("\t{compat}")
-            }
+            trailing_columns(summary, compat)
         );
     }
     Ok(())
+}
+
+/// The optional summary and compat columns of `handover agents`. Compat is
+/// always the fifth column, so an empty summary still gets its tab when compat
+/// follows it; with neither, the line ends after the status column.
+fn trailing_columns(summary: &str, compat: &str) -> String {
+    match (summary.is_empty(), compat.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => format!("\t{summary}"),
+        _ => format!("\t{summary}\t{compat}"),
+    }
 }
 
 fn cmd_actions() -> Result<(), String> {
@@ -672,5 +674,22 @@ or lower the agent's timeout_secs in config.",
         Err(e) => Err(format!(
             "Cannot reach the Handover daemon at {url} ({e}).\nStart Handover (the menu-bar app) or run `handover-daemon` in a terminal."
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trailing_columns;
+
+    #[test]
+    fn compat_stays_in_the_fifth_column() {
+        assert_eq!(trailing_columns("", ""), "");
+        assert_eq!(trailing_columns("cmd", ""), "\tcmd");
+        assert_eq!(
+            trailing_columns("cmd", "adapter: 1.0"),
+            "\tcmd\tadapter: 1.0"
+        );
+        // No summary: an empty column keeps compat where scripts expect it.
+        assert_eq!(trailing_columns("", "adapter: 1.0"), "\t\tadapter: 1.0");
     }
 }

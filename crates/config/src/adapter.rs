@@ -32,6 +32,8 @@
 //! Verified on-machine by running each agent's `--version` and
 //! `scripts/probe-sessions.sh` (filenames + mtimes only).
 
+use crate::AgentConfig;
+
 /// What Handover assumes about one agent's CLI, and when that was last checked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdapterCompat {
@@ -134,6 +136,28 @@ pub fn compat_for(agent_id: &str) -> Option<&'static AdapterCompat> {
     ADAPTER_COMPAT.iter().find(|c| c.agent_id == agent_id)
 }
 
+/// The declaration that applies to a configured agent: its id has a bundled
+/// adapter *and* its command runs that agent's own binary (bare or by path).
+///
+/// The id alone is not enough. A user's own command agent that happens to be
+/// called `claude` but runs `./my-script.sh` makes none of the CLI assumptions
+/// the declaration describes, so labelling it "verified" would be false.
+/// Every bundled adapter's binary is named after its agent id.
+pub fn compat_for_config(config: &AgentConfig) -> Option<&'static AdapterCompat> {
+    let compat = compat_for(&config.id)?;
+    (command_program(&config.command) == Some(config.id.as_str())).then_some(compat)
+}
+
+/// File name of the program a shell command runs, skipping leading `VAR=value`
+/// assignments and surrounding quotes: `FOO=1 "/usr/bin/codex" exec` -> `codex`.
+fn command_program(command: &str) -> Option<&str> {
+    let token = command
+        .split_whitespace()
+        .find(|t| !t.contains('=') || t.starts_with(['"', '\'', '/']))?
+        .trim_matches(['"', '\'']);
+    std::path::Path::new(token).file_name()?.to_str()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,6 +223,41 @@ mod tests {
         // Agents with no bundled adapter (a user's own command agent) have no
         // declaration — and must not be invented for them.
         assert!(compat_for("my-own-agent").is_none());
+    }
+
+    #[test]
+    fn command_program_finds_the_binary_name() {
+        assert_eq!(command_program("codex exec \"{PROMPT}\""), Some("codex"));
+        assert_eq!(
+            command_program("/Users/me/.local/bin/omp -p \"{PROMPT}\""),
+            Some("omp")
+        );
+        assert_eq!(
+            command_program("FOO=1 \"/usr/bin/claude\" -p x"),
+            Some("claude")
+        );
+        assert_eq!(
+            command_program("./my-script.sh --x=1"),
+            Some("my-script.sh")
+        );
+        assert_eq!(command_program("   "), None);
+    }
+
+    #[test]
+    fn compat_applies_only_when_the_command_runs_the_bundled_binary() {
+        let mut config = crate::builtin_session_agents()
+            .into_iter()
+            .find(|a| a.id == "claude")
+            .expect("bundled claude");
+        assert!(compat_for_config(&config).is_some(), "bundled command");
+
+        config.command = "/opt/homebrew/bin/claude -p \"{PROMPT}\"".into();
+        assert!(compat_for_config(&config).is_some(), "binary by full path");
+
+        // A user's own agent that merely reuses the id runs none of the CLI
+        // the declaration describes.
+        config.command = "./my-script.sh \"{PROMPT}\"".into();
+        assert!(compat_for_config(&config).is_none(), "different binary");
     }
 
     #[test]

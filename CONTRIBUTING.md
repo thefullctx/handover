@@ -357,7 +357,8 @@ Tests fail if the adapter and its declaration disagree, in either direction:
   a stale "adapter: …" claim behind.
 - **Malformed entry** — non-empty `assumes`, a real ISO date, and unique ids.
 - `AgentMeta.compat` is populated for bundled agents and **absent** for a user's
-  own command agent (which has no bundled assumptions to drift).
+  own command agent (which has no bundled assumptions to drift), including one
+  that reuses a bundled id but runs a different program (`compat_for_config`).
 
 If you report an agent that misbehaves, include its `--version` output and the
 `adapter:` line from `handover agents` — that pair is what identifies a stale
