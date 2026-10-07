@@ -512,7 +512,8 @@ an Accessibility issue.
 
 **Tray icon (macOS):** monochrome **template** asset (`trayTemplate@2x.png`) with
 `icon_as_template(true)` so the menu bar tints it for light/dark. Dock / `.icns` stay
-the full-color app mark.
+the full-color app mark. Both are generated from the brand kit (`brand/`, see its
+README), not edited by hand.
 
 **Glass / opacity:** CSS tokens use `rgba(..., var(--ui-opacity))`. `general.ui_opacity`
 (0.4–1.0) is edited in Settings → General and broadcast as `ui-opacity:changed` so

@@ -1,6 +1,10 @@
-# Handover
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="brand/png/handover-lockup-on-dark.png">
+  <img src="brand/png/handover-lockup-on-light.png" height="44" alt="Handover">
+</picture>
 
 **See something → one hotkey → send it to the right AI agent.**
+[thefullctx.github.io/handover](https://thefullctx.github.io/handover/)
 
 Handover is a lightweight, local-first, keyboard-first handoff layer between you and your
 existing AI agents. It is **not** an AI agent, a chat application, or an orchestration platform.
