@@ -164,7 +164,7 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:47444/quit
    verbatim
    `ask` sends with the explicit session id, clean composer (no clipboard capture),
    Enter-sends / Shift+Enter-newline keys,
-   composer pre-fill from dropped context, in-thread failures, the thinking-only in-flight bubble,
+   composer pre-fill from dropped context, in-thread failures, the thinking-only in-flight reply, plain (bubble-less) user messages,
    Markdown replies (`markdown.test.tsx`), Copy / Retry under a reply,
    blocked-session Approve/Deny (explicit press, verified vs fail-soft notes), history
    (open / retry / another agent), first-run onboarding, drop capture, and the `?`

@@ -1612,9 +1612,6 @@
   justify-content: flex-end;
 }
 
-.chat-row.agent {
-  justify-content: flex-start;
-}
 
 @keyframes turn-in {
   from {
@@ -1627,24 +1624,15 @@
   }
 }
 
-/* Your message: an outlined bubble on the right, just the text. */
-.chat-bubble {
-  max-width: 86%;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 10px 13px;
-  border-radius: var(--r-lg);
-  border: 1px solid var(--border);
+/* Your message: plain right-aligned text in the secondary colour — no
+   bubble — so the agent's reply stays the main thing on screen. */
+.chat-message {
+  max-width: 80%;
+  text-align: right;
 }
 
-.chat-bubble.user {
-  background: var(--bubble-user);
-  border-color: var(--border-strong);
-}
-
-.chat-bubble.agent {
-  background: var(--hover-fill);
+.chat-message .chat-text {
+  color: var(--text-secondary);
 }
 
 /* The agent's reply reads like a document: no bubble, formatted Markdown at a
@@ -1864,13 +1852,7 @@
   }
 }
 
-.chat-bubble.agent.fail {
-  border-color: var(--danger-border, var(--warning));
-}
 
-.chat-bubble.agent.working {
-  border-color: var(--border);
-}
 
 .chat-meta {
   display: inline-flex;

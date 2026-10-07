@@ -165,7 +165,7 @@ in-session. Two deliberate design points:
   every handoff is in its result panel, opened from *Recent handoffs* (shown in full,
   with **Copy prompt**).
 
-Failures render in-thread; while a message is in flight the bubble shows only a thinking
+Failures render in-thread; while a message is in flight the reply area shows only a thinking
 animation, and the finished reply replaces it.
 
 ### Generic command agent
@@ -231,9 +231,9 @@ flowing) → *Wrapping up* (stream idle >3s, reverting if output resumes) — an
 a quiet phase timeline inside a collapsible **Activity** section, next to real
 measurements: prompt size (measured in Rust), time to first response and output volume
 (measured from the event stream). Nothing here is estimated or animated on a timer; a stat
-that has not been observed yet renders as `—`, not `0`. The in-flight bubble shows a live
+that has not been observed yet renders as `—`, not `0`. The in-flight reply area shows a live
 elapsed timer and a thinking animation only — streamed text (progress, thoughts, partial
-reply) feeds the measurements and the collapsed activity output, never the bubble. Escape dismisses the palette but never cancels a
+reply) feeds the measurements and the collapsed activity output, never the thread. Escape dismisses the palette but never cancels a
 handoff in flight.
 
 **Each exchange owns its own panel.** The live panel belongs to the turn in flight; when
@@ -244,7 +244,8 @@ they are never stored stale. Time to first response is the reason any of this is
 all: it only exists during the stream and cannot be recovered from the outcome afterwards.
 One global panel was wrong here — it made turn 1 report turn 2's numbers.
 
-**Reading a turn.** Your message is a bubble with just its text. The reply is rendered as
+**Reading a turn.** Your message is plain right-aligned text in the secondary colour — no
+bubble, no label. The reply is rendered as
 Markdown (`lib/markdown.tsx`: paragraphs, headings, lists, quotes, fenced code with Copy,
 inline code, bold, italic, links) by building React elements directly, never raw HTML, so
 agent output cannot inject markup. Links open through the `open_url` command, which accepts
@@ -539,7 +540,7 @@ green/red/amber, a mono detail on the right — `working`, `session · <time>`,
 sub-lines) directly above `ChatView` (threaded chat that resumes the agent's live
 session, composer opens clean — the clipboard is never read, only dropped text/files
 pre-fill it — `Enter` sends / `Shift+Enter` newline, inline Approve/Deny for blocked
-sessions, and a thinking-only in-flight bubble — no streamed text in the thread). Picking an agent
+sessions, and a thinking-only in-flight reply — no streamed text in the thread). Picking an agent
 swaps the thread in place; there is no separate landing screen (`ChatHome` was removed).
 `ResultPanel`, `HistoryList`, `WelcomeOverlay`, `ShortcutSheet` and `ErrorState`
 round out the rest, all over a typed IPC layer (`lib/tauri.ts`), with a design-token CSS

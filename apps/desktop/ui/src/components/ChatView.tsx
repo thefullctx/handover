@@ -126,7 +126,7 @@ function ActivitySection({ activity, testId }: { activity: HandoffActivity; test
 /**
  * The palette's live chat: a threaded conversation that keeps resuming the
  * SAME session (`session_id` is passed explicitly on every send, never left
- * to freshest-resolution). Your message is a bubble with just its text; the
+ * to freshest-resolution). Your message is plain right-aligned text; the
  * reply reads as formatted Markdown with a quiet line under it (agent · time ·
  * duration, Copy, Retry, Activity) that shows on hover and always on the
  * newest reply. The exact rendered prompt stays one step away in Recent
@@ -230,7 +230,7 @@ export default function ChatView({
           return (
             <div className={`chat-turn${latest ? " latest" : ""}`} key={i}>
               <div className="chat-row user">
-                <div className="chat-bubble user">
+                <div className="chat-message">
                   <span className="chat-text">{truncate(mine, 8000) || "—"}</span>
                 </div>
               </div>
@@ -312,7 +312,7 @@ export default function ChatView({
         {sending && (
           <div className="chat-turn" data-testid="chat-inflight">
             <div className="chat-row user">
-              <div className="chat-bubble user">
+              <div className="chat-message">
                 <span className="chat-text">{truncate(sendingText ?? "", 8000)}</span>
               </div>
             </div>

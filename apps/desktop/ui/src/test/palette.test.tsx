@@ -565,7 +565,7 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
       expect(screen.getByText(/did not respond within/)).toBeInTheDocument()
     );
     expect(screen.getByTestId("chat")).toBeInTheDocument();
-    expect(document.querySelectorAll(".chat-bubble.user")).toHaveLength(1);
+    expect(document.querySelectorAll(".chat-message")).toHaveLength(1);
   });
 
   it("shows only the thinking state while a message is in flight", async () => {
@@ -702,7 +702,7 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     expect(screen.getByTestId("chat-activity-0-output-volume")).toHaveTextContent(/B|KB/);
   });
 
-  it("shows your message as just its text, with no label or prompt disclosure", async () => {
+  it("shows your message as plain text: no bubble, label or prompt disclosure", async () => {
     const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
     await chooseAgent(user, /Codex/);
     const composer = screen.getByLabelText("Chat message");
@@ -713,8 +713,9 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
       expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
 
-    const bubble = document.querySelector(".chat-bubble.user") as HTMLElement;
-    expect(bubble).toHaveTextContent(/^panic: something exploded$/);
+    const message = document.querySelector(".chat-message") as HTMLElement;
+    expect(message).toHaveTextContent(/^panic: something exploded$/);
+    expect(document.querySelector(".chat-bubble")).toBeNull();
     expect(screen.queryByText("You")).not.toBeInTheDocument();
     // The exact prompt is no longer in the thread (Recent handoffs keeps
     // Copy prompt for it).
