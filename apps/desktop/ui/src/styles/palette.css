@@ -27,6 +27,12 @@
   gap: 12px;
 }
 
+/* Compact (the plain picker): the card is only as tall as its content and
+   the window is sized to match (usePaletteSize). */
+.palette.compact .palette-card {
+  flex: 0 0 auto;
+}
+
 .palette-card {
   flex: 1;
   display: flex;
@@ -1580,8 +1586,8 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 6px 6px 10px;
+  gap: 26px;
+  padding: 8px 6px 12px;
 }
 
 .chat-empty {
@@ -1594,7 +1600,8 @@
 .chat-turn {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  animation: turn-in 220ms var(--ease-out) both;
 }
 
 .chat-row {
@@ -1605,38 +1612,247 @@
   justify-content: flex-end;
 }
 
-.chat-row.agent {
-  justify-content: flex-start;
+
+@keyframes turn-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-/* Messages, as on the website: yours on the right in an outlined bubble, the
-   agent's on the left on a soft fill, each with a small mono "who" line. */
-.chat-bubble {
-  max-width: 86%;
+/* Your message: plain right-aligned text in the secondary colour — no
+   bubble — so the agent's reply stays the main thing on screen. */
+.chat-message {
+  max-width: 80%;
+  text-align: right;
+}
+
+.chat-message .chat-text {
+  color: var(--text-secondary);
+}
+
+/* The agent's reply reads like a document: no bubble, formatted Markdown at a
+   comfortable measure, with one quiet line underneath. */
+.chat-reply {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 10px 13px;
-  border-radius: var(--r-lg);
+  gap: 8px;
+  max-width: 65ch;
+  padding: 0 2px;
+  animation: reply-in 260ms var(--ease-out) both;
+}
+
+@keyframes reply-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.chat-reply.fail .chat-text.error {
+  font-size: 14px;
+}
+
+.chat-md {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text);
+  user-select: text;
+  word-break: break-word;
+}
+
+.chat-md > p {
+  white-space: pre-wrap;
+}
+
+.chat-md .md-h {
+  font-weight: 600;
+  letter-spacing: -0.1px;
+}
+
+.chat-md .md-h1 {
+  font-size: 17px;
+}
+
+.chat-md .md-h2 {
+  font-size: 15.5px;
+}
+
+.chat-md ul,
+.chat-md ol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 20px;
+}
+
+.chat-md li {
+  white-space: pre-wrap;
+}
+
+.chat-md li::marker {
+  color: var(--text-tertiary);
+}
+
+.chat-md blockquote {
+  padding-left: 12px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.chat-md hr {
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.chat-md code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  color: var(--text);
+  background: var(--hover-fill);
   border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  padding: 0.1em 0.35em;
 }
 
-.chat-bubble.user {
-  background: var(--bubble-user);
-  border-color: var(--border-strong);
+.md-link {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
 }
 
-.chat-bubble.agent {
+.md-link:hover {
+  text-decoration-color: var(--text);
+}
+
+/* Fenced code: a soft panel with its language and a Copy button. */
+.md-code {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--hover-fill);
+  overflow: hidden;
+}
+
+.md-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px 5px 12px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.md-code-copy {
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  padding: 2px 6px;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+}
+
+.md-code-copy:hover {
+  color: var(--text);
   background: var(--hover-fill);
 }
 
-.chat-bubble.agent.fail {
-  border-color: var(--danger-border, var(--warning));
+.md-code pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  user-select: text;
 }
 
-.chat-bubble.agent.working {
-  border-color: var(--border);
+.md-code pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
 }
+
+/* The quiet line under a reply: agent · time · duration, then Copy, Retry
+   and Activity. Shown on hover or keyboard focus, and always on the newest
+   reply so its actions are never hidden. */
+.reply-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  min-height: 24px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.chat-turn:hover .reply-meta,
+.chat-turn:focus-within .reply-meta,
+.chat-turn.latest .reply-meta,
+.chat-reply.working .reply-meta,
+.reply-meta:has(.chat-activity[open]) {
+  opacity: 1;
+}
+
+.reply-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+}
+
+.reply-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 7px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+.reply-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover-fill);
+}
+
+.reply-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-turn,
+  .chat-reply {
+    animation: none;
+  }
+}
+
+
 
 .chat-meta {
   display: inline-flex;
@@ -2187,8 +2403,12 @@
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  max-height: 320px;
+  /* About four agents plus the group labels and the Settings link; more
+     agents scroll here instead of growing the window (MENU_ROOM in
+     usePaletteSize.ts must match). */
+  max-height: 300px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px 6px 6px;
   background-color: var(--surface-solid);
   border: 1px solid var(--border-strong);
@@ -2486,21 +2706,28 @@
    measurements behind it (prompt size, time to first response, output
    volume). Collapsed: it is evidence, not the main event.
    --------------------------------------------------------------------- */
+/* Activity lives in the reply line as one more quiet action; opened, it
+   takes the full width below the line. */
 .chat-activity {
   flex-shrink: 0;
-  border-top: 1px solid var(--border);
-  padding-top: var(--sp-2);
+}
+
+.chat-activity[open] {
+  flex-basis: 100%;
+  order: 1;
 }
 
 .chat-activity > summary {
   cursor: pointer;
   list-style: none;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 4px;
-  border-radius: var(--r-control);
-  font-size: 11.5px;
+  gap: 5px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: var(--r-xs);
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--text-tertiary);
   transition: color var(--dur-fast) var(--ease),
     background var(--dur-fast) var(--ease);
@@ -2511,8 +2738,8 @@
 }
 
 .chat-activity > summary:hover {
-  color: var(--text-secondary);
-  background: var(--surface-2);
+  color: var(--text);
+  background: var(--hover-fill);
 }
 
 .activity-body {

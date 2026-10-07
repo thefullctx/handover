@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { HandoverMark, Icon } from "./Icons";
+import { usePaletteSize } from "./lib/usePaletteSize";
 import AgentDropdown, { type DdGroup, type DdItem } from "./components/AgentDropdown";
 import ChatView from "./components/ChatView";
 import ErrorState from "./components/ErrorState";
@@ -968,16 +969,31 @@ export default function App() {
 
   const chatLiveSession = chatAgent ? sessionsByAgent.get(chatAgent.id) ?? null : null;
 
+  // Window size: compact on the plain picker (header, trigger, hint line);
+  // expanded — room for the open agent menu — for everything else, and never
+  // taller than that. See usePaletteSize.
+  const paletteRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const compact =
+    (step === "home" || step === "loading") &&
+    !chatAgent &&
+    !ddOpen &&
+    !dragActive &&
+    !showWelcome &&
+    !showShortcuts;
+  usePaletteSize(paletteRef, cardRef, compact);
+
   return (
     <div
-      className={dragActive ? "palette dropping" : "palette"}
+      ref={paletteRef}
+      className={`palette${dragActive ? " dropping" : ""}${compact ? " compact" : ""}`}
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
       <div className="palette-stack">
-      <div className="palette-card">
+      <div className="palette-card" ref={cardRef}>
         {dragActive && (
           <div className="drop-overlay" data-testid="drop-overlay">
             <div className="drop-card">
