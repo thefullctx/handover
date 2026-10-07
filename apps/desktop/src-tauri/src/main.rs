@@ -139,6 +139,7 @@ fn main() {
             };
             app.manage(shared_state);
             app.manage(PendingSettingsTab::default());
+            app.manage(PaletteCompactHeight::default());
 
             // Settings is *not* created at launch — only when the user opens
             // it. That avoids a second WebKit process (and the system
@@ -150,7 +151,7 @@ fn main() {
             // only — that is what powers the UI (cannot be removed).
             let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title("Handover")
-                .inner_size(520.0, 660.0)
+                .inner_size(PALETTE_WIDTH, PALETTE_DEFAULT_COMPACT_HEIGHT)
                 .resizable(false)
                 .decorations(false)
                 .always_on_top(true)
@@ -299,6 +300,7 @@ fn main() {
             set_preference,
             copy_text,
             open_url,
+            set_palette_height,
             hide_palette,
             notify_result
         ])
@@ -345,6 +347,13 @@ fn open_palette(app: &AppHandle) {
     sync_live_settings(app);
     let _ = app.emit("palette:open", ());
     if let Some(window) = app.get_webview_window("main") {
+        // The palette always reopens on the compact picker; size it before
+        // showing so it never flashes the previous (expanded) size.
+        let height = app
+            .try_state::<PaletteCompactHeight>()
+            .map(|h| *h.0.lock().unwrap_or_else(|e| e.into_inner()))
+            .unwrap_or(PALETTE_DEFAULT_COMPACT_HEIGHT);
+        let _ = window.set_size(tauri::LogicalSize::new(PALETTE_WIDTH, height));
         let _ = window.show();
         let _ = window.set_focus();
         let _ = window.unminimize();
@@ -816,6 +825,56 @@ fn open_settings(app: &AppHandle, tab: Option<&str>) {
 /// lost to an event race.
 #[derive(Default)]
 struct PendingSettingsTab(Mutex<Option<String>>);
+
+/// Palette window width (points). The height follows the UI: compact on the
+/// plain picker, expanded once the agent menu, a chat or a panel needs room.
+const PALETTE_WIDTH: f64 = 520.0;
+/// Height bounds the frontend may request, so a bad measurement can never
+/// produce an unusable window.
+const PALETTE_MIN_HEIGHT: f64 = 120.0;
+const PALETTE_MAX_HEIGHT: f64 = 900.0;
+/// Before the frontend has measured anything (first open).
+const PALETTE_DEFAULT_COMPACT_HEIGHT: f64 = 210.0;
+
+/// The last compact height the palette reported. Applied before the window is
+/// shown, so it opens at its compact size instead of flashing a taller one.
+struct PaletteCompactHeight(Mutex<f64>);
+
+impl Default for PaletteCompactHeight {
+    fn default() -> Self {
+        Self(Mutex::new(PALETTE_DEFAULT_COMPACT_HEIGHT))
+    }
+}
+
+/// Clamps a requested palette height to the allowed range (NaN → default).
+fn clamp_palette_height(height: f64) -> f64 {
+    if height.is_finite() {
+        height.clamp(PALETTE_MIN_HEIGHT, PALETTE_MAX_HEIGHT)
+    } else {
+        PALETTE_DEFAULT_COMPACT_HEIGHT
+    }
+}
+
+/// Resizes the palette window to `height` (width fixed). `compact` marks the
+/// picker-only size, remembered for the next open.
+#[tauri::command]
+fn set_palette_height(
+    app: AppHandle,
+    remembered: tauri::State<PaletteCompactHeight>,
+    height: f64,
+    compact: bool,
+) -> Result<(), String> {
+    let height = clamp_palette_height(height);
+    if compact {
+        *remembered.0.lock().unwrap_or_else(|e| e.into_inner()) = height;
+    }
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "palette window not found".to_string())?;
+    window
+        .set_size(tauri::LogicalSize::new(PALETTE_WIDTH, height))
+        .map_err(|e| e.to_string())
+}
 
 /// App metadata for the Settings window (About / General / Privacy tabs).
 #[derive(Clone, serde::Serialize)]
@@ -1354,7 +1413,15 @@ fn native_notify(app: &AppHandle, title: &str, body: &str, critical: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::is_openable_url;
+    use super::{clamp_palette_height, is_openable_url, PALETTE_MAX_HEIGHT, PALETTE_MIN_HEIGHT};
+
+    #[test]
+    fn palette_heights_are_clamped_to_a_usable_range() {
+        assert_eq!(clamp_palette_height(240.0), 240.0);
+        assert_eq!(clamp_palette_height(10.0), PALETTE_MIN_HEIGHT);
+        assert_eq!(clamp_palette_height(5000.0), PALETTE_MAX_HEIGHT);
+        assert_eq!(clamp_palette_height(f64::NAN), 210.0);
+    }
 
     #[test]
     fn only_plain_web_links_can_be_opened_from_a_reply() {

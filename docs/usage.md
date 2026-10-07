@@ -13,6 +13,9 @@
   shortcut, launch at startup, notifications, keyboard shortcuts), Agents,
   Privacy, and About. Settings is created on demand (not at launch). On macOS the window
   uses Overlay traffic-light chrome over the sidebar.
+- **The palette opens small**: just the header, the agent picker and a hint line. Opening
+  the picker grows it to fit the menu (about four agents; more scroll inside the menu),
+  and the chat stays at that size.
 - **Pick an agent** with the arrow keys and press `Enter` (or click). Every row is
   logo + name + one status dot: **green** when the agent's process is actually running
   (or its session is actively writing), **red** when installed but idle, and **amber**

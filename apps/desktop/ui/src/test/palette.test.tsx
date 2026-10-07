@@ -41,6 +41,8 @@ const tauri = vi.hoisted(() => {
     hidePalette: () => invoke("hide_palette"),
     copyText: (text: string) => invoke("copy_text", { text }),
     openUrl: (url: string) => invoke("open_url", { url }),
+    setPaletteHeight: (height: number, compact: boolean) =>
+      invoke("set_palette_height", { height, compact }),
     notifyResult: (title: string, body: string) => invoke("notify_result", { title, body }),
     openSettingsWindow: () => invoke("open_settings_window"),
     clearHistory: () => invoke("clear_history"),
@@ -104,6 +106,7 @@ async function renderApp(
       case "notify_result":
       case "hide_palette":
       case "copy_text":
+      case "set_palette_height":
       case "open_settings_window":
       case "clear_history":
         return undefined;
@@ -138,6 +141,34 @@ async function chooseAgent(
 }
 
 describe("palette — agent dropdown picker (groups, status, logos)", () => {
+  it("opens compact, grows for the menu, and keeps that size for the chat", async () => {
+    const { MENU_ROOM } = await import("../lib/usePaletteSize");
+    const sizes = () =>
+      tauri.invoke.mock.calls
+        .filter((c) => c[0] === "set_palette_height")
+        .map((c) => c[1] as { height: number; compact: boolean });
+    const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
+    const palette = document.querySelector(".palette") as HTMLElement;
+
+    // Plain picker: compact, and the window is told the compact height.
+    expect(palette).toHaveClass("compact");
+    await waitFor(() => expect(sizes().some((c) => c.compact)).toBe(true));
+    const compactHeight = sizes().filter((c) => c.compact).slice(-1)[0].height;
+
+    // Opening the menu expands by exactly the menu's room.
+    await openDropdown(user);
+    expect(palette).not.toHaveClass("compact");
+    await waitFor(() => expect(sizes().some((c) => !c.compact)).toBe(true));
+    const expanded = sizes().filter((c) => !c.compact).slice(-1)[0].height;
+    expect(expanded).toBe(Math.round(compactHeight + MENU_ROOM));
+
+    // Choosing an agent keeps that size: nothing taller is ever requested.
+    await user.click(screen.getByRole("option", { name: /Codex/ }));
+    await waitFor(() => expect(screen.getByTestId("chat")).toBeInTheDocument());
+    expect(palette).not.toHaveClass("compact");
+    expect(Math.max(...sizes().map((c) => c.height))).toBe(expanded);
+  });
+
   it("shows each agent's session state as a quiet detail on the right", async () => {
     const user = await renderApp(
       makePayload({ sessions: [makeSession({ agent_id: "hermes", activity: "working" })] })

@@ -46,7 +46,7 @@ Implemented and verified end-to-end:
   `session_id` on every message), messages delivered verbatim (no action preamble — the
   exact text you type is exactly what the agent receives), thinking animation until the
   finished reply, Markdown replies, and the exact prompt one step away in Recent handoffs
-- ✅ 219 Rust unit tests + 75 Vitest/Testing Library tests covering the keyboard-first flows
+- ✅ 220 Rust unit tests + 76 Vitest/Testing Library tests covering the keyboard-first flows
   and the session/approval/chat/activity layers; `cargo clippy --workspace --all-targets` is
   warning-free (enforced in CI — see [.github/workflows/ci.yml](../.github/workflows/ci.yml))
 - ✅ Production Content Security Policy (never disabled); prompt temp-cache dir overridable with `HANDOVER_PROMPT_CACHE_DIR` for sandboxed CI

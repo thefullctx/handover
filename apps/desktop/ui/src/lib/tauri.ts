@@ -64,6 +64,12 @@ export function copyText(text: string): Promise<void> {
   return invoke("copy_text", { text });
 }
 
+/** Resizes the palette window to `height` points (width is fixed). `compact`
+ *  marks the picker-only size, which the palette reopens at next time. */
+export function setPaletteHeight(height: number, compact: boolean): Promise<void> {
+  return invoke("set_palette_height", { height, compact });
+}
+
 /** Opens an http(s) link from a reply in the default browser (Rust refuses
  *  every other scheme). */
 export function openUrl(url: string): Promise<void> {

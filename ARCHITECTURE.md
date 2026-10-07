@@ -503,8 +503,15 @@ overridden with `HANDOVER_PORT`; the token with `HANDOVER_TOKEN`.
 
 Two windows, one frontend (the React bundle routes by window label):
 
-- **Palette** (`main`) — a borderless, always-on-top, centered window sized for the
-  handoff sheet + floating dock; shown by the global hotkey, hidden on Escape. With no
+- **Palette** (`main`) — a borderless, always-on-top window, 520pt wide, whose height
+  follows the UI (`usePaletteSize` + the `set_palette_height` command): **compact** on
+  the plain picker (header, trigger, hint line), **expanded** by the agent menu's room
+  for the open menu, the chat and every other panel — never taller; extra agents scroll
+  inside the menu. The window really resizes (a tall transparent window would swallow
+  clicks behind it); growing resizes first and animates the card into it, shrinking
+  animates first and resizes last. Rust remembers the last compact height and applies
+  it before showing, so the palette reopens compact without a flash. Shown by the
+  global hotkey, hidden on Escape. With no
   native chrome, the header strip doubles as the window drag region
   (`data-tauri-drag-region`). A handoff in flight is never cancelled by hiding it.
 - **Settings** (`settings`) — created **only when opened** (menu / `⌘,` / tray / gear).

@@ -27,6 +27,12 @@
   gap: 12px;
 }
 
+/* Compact (the plain picker): the card is only as tall as its content and
+   the window is sized to match (usePaletteSize). */
+.palette.compact .palette-card {
+  flex: 0 0 auto;
+}
+
 .palette-card {
   flex: 1;
   display: flex;
@@ -2415,8 +2421,12 @@
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  max-height: 320px;
+  /* About four agents plus the group labels and the Settings link; more
+     agents scroll here instead of growing the window (MENU_ROOM in
+     usePaletteSize.ts must match). */
+  max-height: 300px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px 6px 6px;
   background-color: var(--surface-solid);
   border: 1px solid var(--border-strong);
