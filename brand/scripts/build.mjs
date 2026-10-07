@@ -20,33 +20,39 @@ const out = (p) => {
   return f;
 };
 
+// Monochrome: ink on white, and the reverse. No accent colour; emphasis comes
+// from weight and contrast.
 export const COLORS = {
-  ink: "#111214",
-  inkRaised: "#1b1c20",
-  inkLine: "#2a2c31",
-  lime: "#d4ff3a",
-  limeDeep: "#a8cc1f",
-  paper: "#f2f2ee",
-  paperDim: "#c9c9c3",
-  muted: "#8b8c91",
+  ink: "#111111",
+  inkSoft: "#3a3a3a",
+  muted: "#6f6f6f",
+  faint: "#9a9a9a",
+  line: "#e3e3df",
+  lineStrong: "#d3d3ce",
+  soft: "#f6f6f4",
+  white: "#ffffff",
+  night: "#0e0e0f",
+  nightRaised: "#1a1a1b",
+  snow: "#f5f5f5",
 };
-const { ink, lime, paper } = COLORS;
+const { ink, white, snow, line } = COLORS;
 
 // --- The glyph -------------------------------------------------------------
 // Designed on a 120-unit tile: two stems (the H) with the ball mid-pass where
 // the crossbar would be. Bounding box is x 30..90, y 26..94, centred on 60,60.
 const GLYPH = { x0: 30, y0: 26, w: 60, h: 68 };
-function glyph({ stem, stem2Opacity = 0.5, ball, ballStroke }) {
-  const ring = ballStroke ? ` stroke="${ballStroke}" stroke-width="2.6"` : "";
+function glyph({ fill }) {
   return [
-    `<rect x="30" y="26" width="16" height="68" rx="8" fill="${stem}"/>`,
-    `<rect x="74" y="26" width="16" height="68" rx="8" fill="${stem}" fill-opacity="${stem2Opacity}"/>`,
-    `<circle cx="60" cy="60" r="${ballStroke ? 8.4 : 9}" fill="${ball}"${ring}/>`,
+    `<rect x="30" y="26" width="16" height="68" rx="8" fill="${fill}"/>`,
+    `<rect x="74" y="26" width="16" height="68" rx="8" fill="${fill}"/>`,
+    `<circle cx="60" cy="60" r="9" fill="${fill}"/>`,
   ].join("");
 }
-const ON_DARK = { stem: paper, ball: lime };
-const ON_LIGHT = { stem: ink, stem2Opacity: 0.42, ball: lime, ballStroke: ink };
-const MONO = { stem: "#000000", ball: "#000000" };
+const ON_DARK = { fill: snow };
+const ON_LIGHT = { fill: ink };
+const MONO = { fill: "#000000" };
+// White tiles get a hairline so their edge survives on white backgrounds.
+const RIM = `stroke="${line}" stroke-width="6"`;
 
 const svg = (w, h, body, vb = `0 0 ${w} ${h}`) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${vb}">${body}</svg>\n`;
@@ -98,15 +104,17 @@ function lockupTight(style, textFill, stacked) {
 // --- SVG sources -------------------------------------------------------------
 const files = {
   // macOS app icon grid: 824px tile at 100px inset on a 1024 canvas.
-  "logo/handover-app-icon.svg": svg(1024, 1024, `<rect x="100" y="100" width="824" height="824" rx="185" fill="${ink}"/>${placed(100, 100, 824, ON_DARK)}`),
+  "logo/handover-app-icon.svg": svg(1024, 1024, `<rect x="103" y="103" width="818" height="818" rx="182" fill="${white}" ${RIM}/>${placed(100, 100, 824, ON_LIGHT)}`),
   // Full-bleed rounded tile: avatars, favicons, in-app header mark.
-  "logo/handover-tile.svg": svg(1024, 1024, `<rect width="1024" height="1024" rx="230" fill="${ink}"/>${placed(0, 0, 1024, ON_DARK)}`),
+  "logo/handover-tile.svg": svg(1024, 1024, `<rect x="3" y="3" width="1018" height="1018" rx="228" fill="${white}" ${RIM}/>${placed(0, 0, 1024, ON_LIGHT)}`),
+  // Reverse tile for dark surfaces (dark-mode UI, dark social cards).
+  "logo/handover-tile-dark.svg": svg(1024, 1024, `<rect width="1024" height="1024" rx="230" fill="${ink}"/>${placed(0, 0, 1024, ON_DARK)}`),
   "logo/handover-glyph-on-dark.svg": svg(GLYPH.w * 4, GLYPH.h * 4, glyph(ON_DARK), `${GLYPH.x0} ${GLYPH.y0} ${GLYPH.w} ${GLYPH.h}`),
-  "logo/handover-glyph-on-light.svg": svg(GLYPH.w * 4, GLYPH.h * 4, glyph(ON_LIGHT), `${GLYPH.x0 - 1.5} ${GLYPH.y0 - 1.5} ${GLYPH.w + 3} ${GLYPH.h + 3}`),
+  "logo/handover-glyph-on-light.svg": svg(GLYPH.w * 4, GLYPH.h * 4, glyph(ON_LIGHT), `${GLYPH.x0} ${GLYPH.y0} ${GLYPH.w} ${GLYPH.h}`),
   "logo/handover-glyph-mono.svg": svg(GLYPH.w * 4, GLYPH.h * 4, glyph(MONO), `${GLYPH.x0} ${GLYPH.y0} ${GLYPH.w} ${GLYPH.h}`),
-  "logo/handover-lockup-on-dark.svg": lockup(ON_DARK, paper),
+  "logo/handover-lockup-on-dark.svg": lockup(ON_DARK, snow),
   "logo/handover-lockup-on-light.svg": lockup(ON_LIGHT, ink),
-  "logo/handover-lockup-stacked-on-dark.svg": lockup(ON_DARK, paper, true),
+  "logo/handover-lockup-stacked-on-dark.svg": lockup(ON_DARK, snow, true),
   "logo/handover-lockup-stacked-on-light.svg": lockup(ON_LIGHT, ink, true),
   // Menu-bar template: black + alpha only; macOS tints it.
   "logo/handover-tray-template.svg": svg(44, 44, placed(4, 4, 36, MONO)),
@@ -149,6 +157,7 @@ function png(svgFile, w, h, file) {
 
 for (const s of [1024, 512, 256, 128]) png("logo/handover-app-icon.svg", s, s, `png/handover-app-icon-${s}.png`);
 for (const s of [1024, 512, 256, 128]) png("logo/handover-tile.svg", s, s, `png/handover-tile-${s}.png`);
+for (const s of [512, 128]) png("logo/handover-tile-dark.svg", s, s, `png/handover-tile-dark-${s}.png`);
 png("logo/handover-glyph-on-dark.svg", 240, 272, "png/handover-glyph-on-dark.png");
 png("logo/handover-glyph-on-light.svg", 240, 272, "png/handover-glyph-on-light.png");
 for (const name of ["lockup-on-dark", "lockup-on-light", "lockup-stacked-on-dark", "lockup-stacked-on-light"]) {
@@ -164,25 +173,26 @@ const fontFace = `@font-face{font-family:Geist;src:url(file://${path.join(BRAND,
 @font-face{font-family:Geist;src:url(file://${path.join(BRAND, "fonts/Geist-Medium.ttf")});font-weight:500}
 @font-face{font-family:"Geist Mono";src:url(file://${path.join(BRAND, "fonts/GeistMono-Medium.ttf")});font-weight:500}`;
 const keycaps = (keys, px) => keys.map((k) =>
-  `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:${px}px;height:${px}px;padding:0 ${px * 0.28}px;border-radius:${px * 0.24}px;background:${COLORS.inkRaised};border:1px solid ${COLORS.inkLine};box-shadow:inset 0 -${px * 0.07}px 0 ${COLORS.inkLine};font:500 ${px * 0.44}px 'Geist Mono';color:${paper}">${k}</span>`
-).join(`<span style="color:${COLORS.muted};font:500 ${px * 0.4}px Geist;margin:0 ${px * 0.22}px">→</span>`);
-const lockupImg = (h) => `<img src="file://${out("logo/handover-lockup-on-dark.svg")}" style="height:${h}px;width:auto">`;
-const card = (w, h, body) => frame(`<style>${fontFace}*{box-sizing:border-box}body{font-family:Geist;color:${paper};width:${w}px;height:${h}px;position:relative;background:${ink}}</style>${body}`, ink);
-// The pass: a lime ball travelling a dotted line, the brand's motion motif.
-const passLine = (w, y, x0, x1) => `<div style="position:absolute;left:${x0}px;top:${y}px;width:${x1 - x0}px;border-top:3px dotted ${COLORS.inkLine}"></div><div style="position:absolute;left:${x1 - 16}px;top:${y - 15}px;width:32px;height:32px;border-radius:50%;background:${lime}"></div>`;
+  `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:${px}px;height:${px}px;padding:0 ${px * 0.28}px;border-radius:${px * 0.24}px;background:${white};border:1px solid ${COLORS.lineStrong};box-shadow:inset 0 -${px * 0.07}px 0 ${COLORS.line};font:500 ${px * 0.44}px 'Geist Mono';color:${ink}">${k}</span>`
+).join(`<span style="color:${COLORS.faint};font:500 ${px * 0.4}px Geist;margin:0 ${px * 0.22}px">→</span>`);
+const lockupImg = (h) => `<img src="file://${out("logo/handover-lockup-on-light.svg")}" style="height:${h}px;width:auto">`;
+const card = (w, h, body) => frame(`<style>${fontFace}*{box-sizing:border-box}body{font-family:Geist;color:${ink};width:${w}px;height:${h}px;position:relative;background:${white}}</style>${body}`, white);
+// The pass: the ball travelling a dotted line, the brand's motion motif.
+const passLine = (w, y, x0, x1) => `<div style="position:absolute;left:${x0}px;top:${y}px;width:${x1 - x0}px;border-top:3px dotted ${COLORS.lineStrong}"></div><div style="position:absolute;left:${x1 - 16}px;top:${y - 15}px;width:32px;height:32px;border-radius:50%;background:${ink}"></div>`;
+const quiet = (t) => `<span style="color:${COLORS.faint}">${t}</span>`;
 
-shoot(card(400, 400, `<img src="file://${out("logo/handover-glyph-on-dark.svg")}" style="position:absolute;left:${200 - 88}px;top:${200 - 100}px;width:176px;height:200px">`), 400, 400, "social/x-avatar.png");
+shoot(card(400, 400, `<img src="file://${out("logo/handover-glyph-on-light.svg")}" style="position:absolute;left:${200 - 88}px;top:${200 - 100}px;width:176px;height:200px">`), 400, 400, "social/x-avatar.png");
 
 shoot(card(1500, 500, `
   <div style="position:absolute;right:120px;top:120px;text-align:right">
-    <div style="font-weight:600;font-size:64px;letter-spacing:-1.6px;line-height:1.08">See something.<br>One hotkey. <span style="color:${lime}">The right agent.</span></div>
+    <div style="font-weight:600;font-size:64px;letter-spacing:-1.6px;line-height:1.08">See something.<br>One hotkey. ${quiet("The right agent.")}</div>
     <div style="margin-top:34px;display:flex;justify-content:flex-end;align-items:center">${keycaps(["⌘⇧A", "↵", "↵"], 54)}</div>
   </div>
   ${passLine(1500, 430, 560, 1380)}`), 1500, 500, "social/x-header.png");
 
 const preview = (w, h) => card(w, h, `
   <div style="position:absolute;left:${w * 0.075}px;top:${h * 0.16}px">${lockupImg(h * 0.105)}</div>
-  <div style="position:absolute;left:${w * 0.075}px;top:${h * 0.36}px;font-weight:600;font-size:${h * 0.105}px;letter-spacing:-${h * 0.0025}px;line-height:1.1">See something. One hotkey.<br><span style="color:${lime}">The right agent.</span></div>
+  <div style="position:absolute;left:${w * 0.075}px;top:${h * 0.36}px;font-weight:600;font-size:${h * 0.105}px;letter-spacing:-${h * 0.0025}px;line-height:1.1">See something. One hotkey.<br>${quiet("The right agent.")}</div>
   <div style="position:absolute;left:${w * 0.075}px;bottom:${h * 0.13}px;display:flex;align-items:center;gap:${h * 0.05}px">
     <div style="display:flex;align-items:center">${keycaps(["⌘⇧A", "↵", "↵"], h * 0.075)}</div>
     <div style="font:500 ${h * 0.034}px Geist;color:${COLORS.muted}">Open source · Local-first · macOS &amp; Linux</div>
@@ -191,13 +201,13 @@ const preview = (w, h) => card(w, h, `
 shoot(preview(1280, 640), 1280, 640, "social/github-social-preview.png");
 shoot(preview(1200, 630), 1200, 630, "social/og-image.png");
 
-// Announcement template: edit TITLE / ITEMS, rerun, post.
+// Announcement template: edit kicker / title / items, rerun, post.
 const post = ({ kicker, title, items }) => card(1600, 900, `
   <div style="position:absolute;left:110px;top:96px">${lockupImg(54)}</div>
-  <div style="position:absolute;left:110px;top:210px;font:500 26px 'Geist Mono';color:${lime};letter-spacing:1px">${kicker}</div>
+  <div style="position:absolute;left:110px;top:210px;font:500 26px 'Geist Mono';color:${COLORS.muted};letter-spacing:1px">${kicker}</div>
   <div style="position:absolute;left:110px;top:256px;font-weight:600;font-size:76px;letter-spacing:-2px;line-height:1.05;width:1300px">${title}</div>
   <div style="position:absolute;left:110px;top:${title.includes("<br>") ? 480 : 400}px;display:grid;gap:22px;width:1380px">${items.map((t) =>
-    `<div style="display:flex;gap:22px;align-items:baseline;font:500 34px Geist;color:${COLORS.paperDim}"><span style="flex:none;width:16px;height:16px;border-radius:50%;background:${lime};transform:translateY(-4px)"></span><span>${t}</span></div>`).join("")}</div>
+    `<div style="display:flex;gap:22px;align-items:baseline;font:500 34px Geist;color:${COLORS.inkSoft}"><span style="flex:none;width:14px;height:14px;border-radius:50%;background:${ink};transform:translateY(-5px)"></span><span>${t}</span></div>`).join("")}</div>
   <div style="position:absolute;left:110px;bottom:84px;font:500 26px 'Geist Mono';color:${COLORS.muted}">github.com/thefullctx/handover</div>`);
 shoot(post({
   kicker: "WHAT'S NEW",
@@ -218,8 +228,6 @@ tray(44, "png/tray/trayTemplate@2x.png");
 tray(32, "png/tray/trayTemplate-32.png");
 tray(1024, "png/tray/trayTemplate-source.png");
 for (const f of fs.readdirSync(out("png/tray"))) fs.copyFileSync(out(`png/tray/${f}`), path.join(icons, f));
-png("logo/handover-tile.svg", 128, 128, "png/handover-mark-128.png");
-fs.copyFileSync(out("png/handover-mark-128.png"), path.join(REPO, "apps/desktop/ui/src/assets/handover-mark.png"));
 
 // The website ships its own copies (GitHub Pages serves only site/).
 const site = path.join(REPO, "site/assets");
@@ -229,8 +237,8 @@ for (const [from, to] of [
   ["favicon/favicon-32.png", "favicon-32.png"],
   ["favicon/favicon-180.png", "apple-touch-icon.png"],
   ["social/og-image.png", "og-image.png"],
-  ["logo/handover-lockup-on-dark.svg", "handover-lockup.svg"],
-  ["logo/handover-glyph-on-dark.svg", "handover-glyph.svg"],
+  ["logo/handover-lockup-on-light.svg", "handover-lockup.svg"],
+  ["logo/handover-glyph-on-light.svg", "handover-glyph.svg"],
   ["png/handover-tile-128.png", "handover-tile.png"],
   ["fonts/Geist-Medium.ttf", "Geist-Medium.ttf"],
   ["fonts/Geist-SemiBold.ttf", "Geist-SemiBold.ttf"],

@@ -9,9 +9,8 @@
 ## The mark
 
 **The pass.** An H made of two stems, with the crossbar replaced by a ball
-mid-pass: the thing you saw, travelling from you to the agent. The left stem is
-solid (you), the right one is quieter (the agent picking it up), and the ball is
-always the brightest thing in the mark.
+mid-pass: the thing you saw, travelling from you to the agent. It is strictly
+monochrome: black on white, or white on black, never a colour.
 
 Everything here is generated from one geometry by `scripts/build.mjs`. Change
 the mark there, not in the exported files.
@@ -19,10 +18,11 @@ the mark there, not in the exported files.
 | File | Use it for |
 |---|---|
 | `logo/handover-app-icon.svg` · `png/handover-app-icon-*.png` | The app icon (macOS grid: 824px tile inset 100px on 1024). Source for `tauri icon`. |
-| `logo/handover-tile.svg` · `png/handover-tile-*.png` | Full-bleed rounded tile: avatars, favicons, the in-app header mark. |
-| `logo/handover-glyph-on-dark.svg` | The glyph alone on ink or any dark surface. |
-| `logo/handover-glyph-on-light.svg` | The glyph alone on paper or white. The ball keeps an ink ring, so lime never sits bare on a light background. |
-| `logo/handover-glyph-mono.svg` | One-colour uses: stamps, embossing, anything printed in a single ink. |
+| `logo/handover-tile.svg` · `png/handover-tile-*.png` | Full-bleed white tile with a hairline rim: avatars and favicons. |
+| `logo/handover-tile-dark.svg` · `png/handover-tile-dark-*.png` | The reverse tile, for dark surfaces. |
+| `logo/handover-glyph-on-light.svg` | The glyph alone on white or any light surface. |
+| `logo/handover-glyph-on-dark.svg` | The glyph alone on black or any dark surface. |
+| `logo/handover-glyph-mono.svg` | Pure black, for print and anything that recolours it. |
 | `logo/handover-tray-template.svg` · `png/tray/` | macOS menu-bar template (black + alpha; macOS tints it). Copied into `apps/desktop/src-tauri/icons/`. |
 | `logo/handover-lockup-*.svg` · `png/handover-lockup-*.png` | Glyph + wordmark, horizontal or stacked, for dark or light backgrounds. |
 | `favicon/` | `favicon.svg` plus 16–512px PNGs (180 is the Apple touch icon). |
@@ -32,26 +32,34 @@ and one stem width around a lockup.
 **Minimum size:** glyph 16px tall on screen; lockup 20px tall.
 
 Don't:
-- recolour the stems or put the ball in any colour but lime (or ink, in mono);
-- put bare lime on a light background (use the on-light glyph);
+- add colour to any part of the mark, including the ball;
+- set the mark in grey or at reduced opacity (use black or white only);
 - rotate, outline, add shadows or gradients, or stretch the mark;
 - set "Handover" in another typeface next to the mark (use the lockup files).
 
 ## Colour
 
+Handover is monochrome. Emphasis comes from weight, size and contrast, never
+from an accent colour.
+
 | | Hex | Role |
 |---|---|---|
-| Ink | `#111214` | Primary background. The app icon tile. |
-| Ink raised | `#1b1c20` | Cards, keycaps and panels on ink. |
-| Ink line | `#2a2c31` | Borders and dividers on ink. |
-| **Lime** | `#d4ff3a` | The accent: the ball, primary buttons, one highlighted phrase. Use sparingly. One lime thing per view reads as intent; five read as noise. |
-| Lime deep | `#a8cc1f` | Lime hover/pressed states. |
-| Paper | `#f2f2ee` | Text on ink; the light-theme background. |
-| Paper dim | `#c9c9c3` | Secondary text on ink. |
-| Muted | `#8b8c91` | Captions and tertiary text. |
+| Ink | `#111111` | Text, the mark, primary buttons. |
+| Ink soft | `#3a3a3a` | Body text where full ink is too heavy. |
+| Muted | `#6f6f6f` | Secondary text and captions. |
+| Faint | `#9a9a9a` | De-emphasised headline phrases, placeholders. Large text only. |
+| Line | `#e3e3df` | Hairlines, tile rims. |
+| Line strong | `#d3d3ce` | Input borders, keycaps. |
+| Soft | `#f6f6f4` | Panels on white. |
+| White | `#ffffff` | The page and the app icon tile. |
+| Night | `#0e0e0f` · raised `#1a1a1b` · snow `#f5f5f5` | The same roles, reversed, for dark mode. |
 
-Lime on ink is 16:1 and paper on ink 17:1 (both WCAG AAA); muted on ink is 5.6:1 (AA). Lime on paper is 1.03:1, effectively invisible. On
-light surfaces, use ink text and keep lime for fills (with ink text on top).
+Contrast on white: ink 18.9:1, ink soft 11.4:1, muted 5.0:1 (all pass WCAG AA
+for body text); faint 2.8:1, so keep it to large headline text.
+
+**Status colours are not brand colours.** The app's green (running), red
+(idle) and amber (provider unreachable) lights carry meaning and stay as they
+are. Never use them decoratively.
 
 ## Type
 
@@ -62,8 +70,8 @@ tight (letter-spacing about −2.5%); keycaps always use Geist Mono.
 
 ## Motion
 
-The brand's one motion idea is **the pass**: the lime ball travels along a
-dotted line from left to right and lands. Use it for handoff moments (a send,
+The brand's one motion idea is **the pass**: the ball travels along a dotted
+line from left to right and lands. Use it for handoff moments (a send,
 a page transition), never as idle decoration.
 
 ## Social
@@ -86,8 +94,8 @@ node build.mjs
 
 The build needs Chromium to render PNGs. It finds Playwright's cached headless
 shell automatically (`npx playwright install chromium-headless-shell`), or set
-`CHROME=/path/to/chrome`. It also refreshes the app's tray icons and the in-app
-header mark. To regenerate the app icon set after changing the mark:
+`CHROME=/path/to/chrome`. It also refreshes the app's tray icons and the
+website's assets in `site/assets`. To regenerate the app icon set after changing the mark:
 
 ```bash
 cd apps/desktop/src-tauri
