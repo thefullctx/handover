@@ -1615,7 +1615,7 @@ dependencies = [
 
 [[package]]
 name = "handover-agents"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "dirs 7.0.0",
  "handover-config",
@@ -1627,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "handover-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "handover-config",
@@ -1638,7 +1638,7 @@ dependencies = [
 
 [[package]]
 name = "handover-config"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "dirs 7.0.0",
  "handover-core",
@@ -1651,7 +1651,7 @@ dependencies = [
 
 [[package]]
 name = "handover-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "dirs 7.0.0",
@@ -1664,7 +1664,7 @@ dependencies = [
 
 [[package]]
 name = "handover-daemon"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "arboard",
  "chrono",
@@ -1684,7 +1684,7 @@ dependencies = [
 
 [[package]]
 name = "handover-desktop"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "env_logger",
  "handover-agents",
