@@ -137,6 +137,25 @@ async function chooseAgent(
 }
 
 describe("palette — agent dropdown picker (groups, status, logos)", () => {
+  it("shows each agent's session state as a quiet detail on the right", async () => {
+    const user = await renderApp(
+      makePayload({ sessions: [makeSession({ agent_id: "hermes", activity: "working" })] })
+    );
+    await openDropdown(user);
+    expect(screen.getByTestId("agent-hermes")).toHaveTextContent(/working/);
+    // No session for Codex: it is merely installed.
+    expect(screen.getByTestId("agent-codex")).toHaveTextContent(/installed/);
+  });
+
+  it("labels an idle session with its time instead of 'working'", async () => {
+    const user = await renderApp(
+      makePayload({ sessions: [makeSession({ agent_id: "codex", activity: "idle" })] })
+    );
+    await openDropdown(user);
+    expect(screen.getByTestId("agent-codex")).toHaveTextContent(/session · /);
+    expect(screen.getByTestId("agent-codex")).not.toHaveTextContent(/working/);
+  });
+
   it("opens clean (no clipboard capture), trigger shows a placeholder, menu groups Running now / Available", async () => {
     const user = await renderApp(
       makePayload({ sessions: [makeSession({ agent_id: "hermes", activity: "working" })] })

@@ -1,10 +1,10 @@
 /* ==========================================================================
    Handover — design tokens
-   Visual language: native macOS floating glass utility — very large
-   continuous radii, pill bars, circular icon targets, layered inset
-   highlights, fine 1px translucent rims, broad soft shadows. Monochrome
-   (brand kit): neutral grays, an ink/snow accent, and colour only where it
-   carries status.
+   Visual language: matches the website's palette — a solid card with a
+   16px radius, hairline borders, one soft shadow, 8px controls, Geist for
+   text and Geist Mono for labels, meta and keycaps. Monochrome (brand kit):
+   neutral grays, an ink/snow accent, and colour only where it carries
+   status.
    Theme via <html data-theme> (main.tsx). Media-query fallback pre-bootstrap.
    ========================================================================== */
 
@@ -37,8 +37,8 @@
   --surface-2: rgba(var(--surface-2-rgb), var(--ui-opacity));
   --surface-3: rgba(var(--surface-3-rgb), var(--ui-opacity));
   --glass-fill: rgba(var(--glass-rgb), var(--ui-opacity));
-  --glass-rim: rgba(255, 255, 255, 0.95);
-  --glass-rim-inner: rgba(255, 255, 255, 0.65);
+  --glass-rim: transparent;
+  --glass-rim-inner: transparent;
   --pill-fill: rgba(var(--pill-rgb), var(--ui-opacity));
   --pill-fill-strong: rgba(var(--pill-rgb), var(--ui-opacity));
   --circle-btn: #ffffff;
@@ -72,7 +72,7 @@
   /* Card shadow — light, tight enough to fade out INSIDE the window padding
      so it hugs the card's rounded silhouette instead of clipping into a
      hard-edged rectangle (max offset+blur must stay < palette padding). */
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 5px 15px rgba(0, 0, 0, 0.09);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 18px rgba(0, 0, 0, 0.10);
 
   --sp-1: 4px;
   --sp-2: 8px;
@@ -81,14 +81,17 @@
   --sp-5: 20px;
   --sp-6: 28px;
 
-  /* Glass radii — generous continuous orb language (reference: ~32–38px). */
-  --r-xs: 10px;
-  --r-sm: 14px;
-  --r-md: 18px;
-  --r-lg: 22px;
-  --r-xl: 30px;
-  --r-2xl: 38px;
-  --r-tile: 13px;
+  /* Radii — the site's tighter language: 16px window, 10–12px panels,
+     8px controls. Pills are only for things that are genuinely round
+     (sliders); dots and knobs use 50%. */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 12px;
+  --r-xl: 14px;
+  --r-2xl: 16px;
+  --r-tile: 8px;
+  --r-control: 8px;
   --r-pill: 999px;
 
   --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -130,8 +133,8 @@
   --surface-2: rgba(var(--surface-2-rgb), var(--ui-opacity));
   --surface-3: rgba(var(--surface-3-rgb), var(--ui-opacity));
   --glass-fill: rgba(var(--glass-rgb), var(--ui-opacity));
-  --glass-rim: rgba(255, 255, 255, 0.10);
-  --glass-rim-inner: rgba(255, 255, 255, 0.05);
+  --glass-rim: transparent;
+  --glass-rim-inner: transparent;
   --pill-fill: rgba(var(--pill-rgb), var(--ui-opacity));
   --pill-fill-strong: rgba(46, 46, 48, var(--ui-opacity));
   --circle-btn: #f5f5f5;
@@ -185,8 +188,8 @@
     --surface-2: rgba(var(--surface-2-rgb), var(--ui-opacity));
     --surface-3: rgba(var(--surface-3-rgb), var(--ui-opacity));
     --glass-fill: rgba(var(--glass-rgb), var(--ui-opacity));
-    --glass-rim: rgba(255, 255, 255, 0.10);
-    --glass-rim-inner: rgba(255, 255, 255, 0.05);
+    --glass-rim: transparent;
+    --glass-rim-inner: transparent;
     --pill-fill: rgba(var(--pill-rgb), var(--ui-opacity));
     --pill-fill-strong: rgba(46, 46, 48, var(--ui-opacity));
     --circle-btn: #f5f5f5;
@@ -306,7 +309,7 @@ code {
   background: var(--pill-fill);
   border: 1px solid var(--border);
   color: var(--text);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-control);
   padding: 8px 16px;
   font-size: 12.5px;
   font-weight: 500;
@@ -391,7 +394,7 @@ code {
   border: 1px solid transparent;
   color: var(--text-tertiary);
   padding: 0;
-  border-radius: 50%;
+  border-radius: var(--r-sm);
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease),
     background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
@@ -465,7 +468,7 @@ code {
   background: var(--pill-fill);
   border: 1px solid var(--border);
   padding: 3px 10px;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-control);
   white-space: nowrap;
 }
 

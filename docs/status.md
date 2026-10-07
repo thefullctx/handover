@@ -6,9 +6,10 @@ Implemented and verified end-to-end:
 - ✅ Global hotkey → chat-first palette (agent list → chat with the running agent); handoffs run off the UI thread
 - ✅ Agent dropdown + chat merged surface: rows are logo + name + one status dot — green (process actually running / session actively writing), red (installed idle), amber (provider down, with reason); blocked sessions keep `blocked · approve?`; keyboard-first selection; lights refresh live while the palette is open
 - ✅ Settings window (lazy-created; menu bar / `⌘,` / tray / palette gear) with Overlay traffic-light chrome: General (appearance, window opacity for palette + Settings, live shortcut re-register, launch at startup, notifications), Agents, Privacy, About
-- ✅ Apple-native floating-glass UI in the monochrome brand: shared light/dark design
-  tokens, Geist / Geist Mono, large continuous radii, pill bars + circular controls,
-  header tools, "the pass" app icon + macOS template tray icon (brand kit in `brand/`)
+- ✅ Monochrome UI matching the website's palette: shared light/dark design tokens,
+  Geist / Geist Mono, a solid 16px card with hairline borders, 8–12px controls, mono
+  labels and meta, header tools, "the pass" app icon + macOS template tray icon
+  (brand kit in `brand/`)
 - ✅ Standardized Capture object (drag-and-drop text/files, CLI/API captures) — the palette is chat-first and sends messages verbatim; the clipboard is never read
 - ✅ Generic command agent adapter (`{PROMPT}`, `{PROMPT_FILE}`, stdin) + registry
 - ✅ Concurrent agent stdout/stderr drain, output caps, process-group timeout (Unix)
@@ -46,7 +47,7 @@ Implemented and verified end-to-end:
   exact text you type is exactly what the agent receives), thinking animation until the
   finished reply + per-turn
   "Prompt that was sent" transparency
-- ✅ 218 Rust unit tests + 65 Vitest/Testing Library tests covering the keyboard-first flows
+- ✅ 218 Rust unit tests + 67 Vitest/Testing Library tests covering the keyboard-first flows
   and the session/approval/chat/activity layers; `cargo clippy --workspace --all-targets` is
   warning-free (enforced in CI — see [.github/workflows/ci.yml](../.github/workflows/ci.yml))
 - ✅ Production Content Security Policy (never disabled); prompt temp-cache dir overridable with `HANDOVER_PROMPT_CACHE_DIR` for sandboxed CI
