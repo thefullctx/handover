@@ -1,4 +1,7 @@
-# Handover
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="brand/png/handover-lockup-on-dark.png">
+  <img src="brand/png/handover-lockup-on-light.png" height="44" alt="Handover">
+</picture>
 
 **See something → one hotkey → send it to the right AI agent.**
 

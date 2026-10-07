@@ -1,38 +1,29 @@
 /* ==========================================================================
-   Typography — match ChatGPT desktop
-   ChatGPT for macOS uses OpenAI Sans (bundled in their app; same files are
-   published on cdn.openai.com). We load local woff2 copies for offline use.
-   Proprietary typeface — not for redistribution beyond this personal app.
+   Typography — Geist and Geist Mono, the brand typefaces (SIL Open Font
+   License, see assets/fonts/OFL.txt). Bundled so the app works offline.
+   Medium covers regular and medium weights; SemiBold covers 600–700.
    ========================================================================== */
 
 @font-face {
-  font-family: "OpenAI Sans";
-  src: url("../assets/fonts/OpenAISans-Regular.woff2") format("woff2");
+  font-family: "Geist";
+  src: url("../assets/fonts/Geist-Medium.ttf") format("truetype");
   font-style: normal;
-  font-weight: 400;
+  font-weight: 400 500;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "OpenAI Sans";
-  src: url("../assets/fonts/OpenAISans-Medium.woff2") format("woff2");
+  font-family: "Geist";
+  src: url("../assets/fonts/Geist-SemiBold.ttf") format("truetype");
   font-style: normal;
-  font-weight: 500;
+  font-weight: 600 700;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "OpenAI Sans";
-  src: url("../assets/fonts/OpenAISans-Semibold.woff2") format("woff2");
+  font-family: "Geist Mono";
+  src: url("../assets/fonts/GeistMono-Medium.ttf") format("truetype");
   font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "OpenAI Sans";
-  src: url("../assets/fonts/OpenAISans-Bold.woff2") format("woff2");
-  font-style: normal;
-  font-weight: 700;
+  font-weight: 400 600;
   font-display: swap;
 }

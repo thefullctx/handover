@@ -1,0 +1,12 @@
+{
+  "name": "handover-brand",
+  "private": true,
+  "type": "module",
+  "description": "Builds the Handover brand kit (see ../README.md).",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "opentype.js": "^1.3.4"
+  }
+}

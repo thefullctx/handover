@@ -73,8 +73,7 @@ html:not(.is-mac) .settings-brand {
 
 .settings-brand .handover-mark {
   display: block;
-  border-radius: 6px;
-  object-fit: cover;
+  color: var(--text);
 }
 
 .settings-nav {
@@ -407,6 +406,7 @@ html:not(.is-mac) .settings-brand {
 }
 
 .switch:checked::after {
+  background: var(--accent-fg);
   transform: translateX(16px);
 }
 
@@ -954,6 +954,7 @@ html:not(.is-mac) .settings-brand {
 }
 
 .toggle input:checked + .toggle-track::after {
+  background: var(--accent-fg);
   transform: translateX(12px);
 }
 
@@ -1018,7 +1019,6 @@ html:not(.is-mac) .settings-brand {
 .about-logo .handover-mark {
   width: 100%;
   height: 100%;
-  object-fit: cover;
   display: block;
 }
 

@@ -73,11 +73,8 @@
 }
 
 .palette-header .logo .handover-mark {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
   display: block;
-  border-radius: 7px;
+  color: var(--text);
 }
 
 .title {
@@ -1913,7 +1910,6 @@
 .welcome-mark .handover-mark {
   width: 100%;
   height: 100%;
-  object-fit: cover;
   display: block;
 }
 

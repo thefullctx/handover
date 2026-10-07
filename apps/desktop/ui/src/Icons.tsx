@@ -12,18 +12,41 @@ interface IconProps {
   label?: string;
 }
 
-/** Brand mark: metal “H” app icon (bitmap — stays crisp via high-res source). */
-export function HandoverMark({ size = 18, className }: IconProps) {
+/**
+ * Brand mark ("the pass"): an H whose crossbar is a ball mid-pass. Drawn
+ * inline so it follows the theme. By default it is the bare glyph in the
+ * current text colour; `tile` renders the app-icon tile (white, ink glyph,
+ * hairline rim) for the larger About / Welcome spots. Geometry matches
+ * brand/scripts/build.mjs.
+ */
+export function HandoverMark({ size = 18, className, tile = false }: IconProps & { tile?: boolean }) {
+  const cls = className ? `handover-mark ${className}` : "handover-mark";
+  const glyph = (
+    <>
+      <rect x="30" y="26" width="16" height="68" rx="8" />
+      <rect x="74" y="26" width="16" height="68" rx="8" />
+      <circle cx="60" cy="60" r="9" />
+    </>
+  );
+  if (tile) {
+    return (
+      <svg className={cls} width={size} height={size} viewBox="0 0 120 120" aria-hidden="true">
+        <rect x="0.5" y="0.5" width="119" height="119" rx="27" fill="#ffffff" stroke="#e3e3df" />
+        <g fill="#111111">{glyph}</g>
+      </svg>
+    );
+  }
   return (
-    <img
-      src={new URL("./assets/handover-mark.png", import.meta.url).href}
-      width={size}
+    <svg
+      className={cls}
+      width={Math.round((size * 60) / 68)}
       height={size}
-      alt=""
+      viewBox="30 26 60 68"
+      fill="currentColor"
       aria-hidden="true"
-      className={className ? `handover-mark ${className}` : "handover-mark"}
-      draggable={false}
-    />
+    >
+      {glyph}
+    </svg>
   );
 }
 

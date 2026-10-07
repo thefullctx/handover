@@ -63,7 +63,7 @@ export default function WelcomeOverlay({
     >
       <div className="welcome-card">
         <span className="welcome-mark">
-          <HandoverMark size={30} />
+          <HandoverMark size={56} tile />
         </span>
         <h2>Welcome to Handover</h2>
         <p className="welcome-lead">
