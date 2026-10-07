@@ -160,10 +160,12 @@ in-session. Two deliberate design points:
   skipped. Without this, "Analyze the provided context and tell me what you
   recommend." wrapped around a casual question made agents answer
   "I don't see any new context in your message" instead of conversationally.
-- **Transparency**: every turn shows the exact rendered prompt under an expandable
-  "Prompt that was sent" disclosure — nothing the agent receives is hidden.
+- **Transparency**: nothing the agent receives is hidden. The thread shows just what
+  you typed (dropped context already sits in that text); the exact rendered prompt of
+  every handoff is in its result panel, opened from *Recent handoffs* (shown in full,
+  with **Copy prompt**).
 
-Failures render in-thread; while a message is in flight the bubble shows only a thinking
+Failures render in-thread; while a message is in flight the reply area shows only a thinking
 animation, and the finished reply replaces it.
 
 ### Generic command agent
@@ -226,12 +228,12 @@ The palette never blocks on an agent: the daemon streams every stdout/stderr chu
 prompt's byte length the moment the send begins. The chat view derives an **observable
 phase** from that stream — *Sending context* (no output yet) → *Agent responding* (chunks
 flowing) → *Wrapping up* (stream idle >3s, reverting if output resumes) — and renders it as
-a quiet phase timeline inside a collapsible **Show activity** section, next to real
+a quiet phase timeline inside a collapsible **Activity** section, next to real
 measurements: prompt size (measured in Rust), time to first response and output volume
 (measured from the event stream). Nothing here is estimated or animated on a timer; a stat
-that has not been observed yet renders as `—`, not `0`. The in-flight bubble shows a live
+that has not been observed yet renders as `—`, not `0`. The in-flight reply area shows a live
 elapsed timer and a thinking animation only — streamed text (progress, thoughts, partial
-reply) feeds the measurements and the collapsed activity output, never the bubble. Escape dismisses the palette but never cancels a
+reply) feeds the measurements and the collapsed activity output, never the thread. Escape dismisses the palette but never cancels a
 handoff in flight.
 
 **Each exchange owns its own panel.** The live panel belongs to the turn in flight; when
@@ -242,9 +244,14 @@ they are never stored stale. Time to first response is the reason any of this is
 all: it only exists during the stream and cannot be recovered from the outcome afterwards.
 One global panel was wrong here — it made turn 1 report turn 2's numbers.
 
-Every turn also carries a **"Prompt that was sent"** disclosure: the exact rendered prompt
-the agent received (which may differ from what was typed — a chat message goes through the
-`ask` template, a captured file adds context headers), not just the text in the bubble.
+**Reading a turn.** Your message is plain right-aligned text in the secondary colour — no
+bubble, no label. The reply is rendered as
+Markdown (`lib/markdown.tsx`: paragraphs, headings, lists, quotes, fenced code with Copy,
+inline code, bold, italic, links) by building React elements directly, never raw HTML, so
+agent output cannot inject markup. Links open through the `open_url` command, which accepts
+only `http(s)` URLs and is called only on a click. Under each reply one quiet line (agent ·
+time · duration, **Copy**, **Retry**, **Activity**) appears on hover or focus and always on
+the newest reply; Retry re-sends the same text into the same session.
 
 Completed handoffs land in the same thread, outcome-first in shape — the agent's answer as
 readable text, raw stdout/stderr and the prompt in expandable details — and the full
@@ -497,8 +504,15 @@ overridden with `HANDOVER_PORT`; the token with `HANDOVER_TOKEN`.
 
 Two windows, one frontend (the React bundle routes by window label):
 
-- **Palette** (`main`) — a borderless, always-on-top, centered window sized for the
-  handoff sheet + floating dock; shown by the global hotkey, hidden on Escape. With no
+- **Palette** (`main`) — a borderless, always-on-top window, 520pt wide, whose height
+  follows the UI (`usePaletteSize` + the `set_palette_height` command): **compact** on
+  the plain picker (header, trigger, hint line), **expanded** by the agent menu's room
+  for the open menu, the chat and every other panel — never taller; extra agents scroll
+  inside the menu. The window really resizes (a tall transparent window would swallow
+  clicks behind it); growing resizes first and animates the card into it, shrinking
+  animates first and resizes last. Rust remembers the last compact height and applies
+  it before showing, so the palette reopens compact without a flash. Shown by the
+  global hotkey, hidden on Escape. With no
   native chrome, the header strip doubles as the window drag region
   (`data-tauri-drag-region`). A handoff in flight is never cancelled by hiding it.
 - **Settings** (`settings`) — created **only when opened** (menu / `⌘,` / tray / gear).
@@ -526,7 +540,7 @@ green/red/amber, a mono detail on the right — `working`, `session · <time>`,
 sub-lines) directly above `ChatView` (threaded chat that resumes the agent's live
 session, composer opens clean — the clipboard is never read, only dropped text/files
 pre-fill it — `Enter` sends / `Shift+Enter` newline, inline Approve/Deny for blocked
-sessions, and a thinking-only in-flight bubble — no streamed text in the thread). Picking an agent
+sessions, and a thinking-only in-flight reply — no streamed text in the thread). Picking an agent
 swaps the thread in place; there is no separate landing screen (`ChatHome` was removed).
 `ResultPanel`, `HistoryList`, `WelcomeOverlay`, `ShortcutSheet` and `ErrorState`
 round out the rest, all over a typed IPC layer (`lib/tauri.ts`), with a design-token CSS

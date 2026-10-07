@@ -46,7 +46,6 @@
 
   --hover-fill: rgba(0, 0, 0, 0.045);
   --selected-fill: rgba(0, 0, 0, 0.075);
-  --bubble-user: rgba(255, 255, 255, 0.95);
 
   /* Ink grays (brand kit: ink / muted / faint). */
   --text: #111111;
@@ -142,7 +141,6 @@
 
   --hover-fill: rgba(255, 255, 255, 0.05);
   --selected-fill: rgba(255, 255, 255, 0.09);
-  --bubble-user: rgba(255, 255, 255, 0.08);
 
   --text: #f5f5f5;
   --text-secondary: #a6a6a6;
@@ -197,7 +195,6 @@
 
     --hover-fill: rgba(255, 255, 255, 0.05);
     --selected-fill: rgba(255, 255, 255, 0.09);
-    --bubble-user: rgba(255, 255, 255, 0.08);
 
     --text: #f5f5f5;
     --text-secondary: #a6a6a6;
