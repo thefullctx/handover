@@ -17,7 +17,9 @@
   logo + name + one status dot: **green** when the agent's process is actually running
   (or its session is actively writing), **red** when installed but idle, and **amber**
   with a reason line when the binary is fine but its model provider is unreachable —
-  e.g. your local model server isn't up. A blocked agent keeps its
+  e.g. your local model server isn't up. On the right, a small detail says what you'd
+  resume into: `working`, `session · <time>` for a quiet session, or `installed` when
+  there is none yet. A blocked agent keeps its
   `blocked · approve?` line (the pending question on hover); Approve/Deny live in the
   chat's approval card. The lights refresh every few seconds while the palette is open —
   start an agent in a terminal and watch it flip red→green without closing anything.

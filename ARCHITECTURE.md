@@ -520,8 +520,9 @@ README), not edited by hand.
 palette and Settings stay in sync. Both windows are transparent so the alpha is visible.
 
 The UI is chat-first: the palette opens on a single merged surface — `AgentDropdown`
-(trigger pill naming the current agent; menu rows are logo + name + one status dot,
-green/red/amber, with `blocked · approve?` or the provider-down reason as the only
+(trigger naming the current agent; menu rows are logo + name + one status dot,
+green/red/amber, a mono detail on the right — `working`, `session · <time>`,
+`installed` — and `blocked · approve?` or the provider-down reason as the only
 sub-lines) directly above `ChatView` (threaded chat that resumes the agent's live
 session, composer opens clean — the clipboard is never read, only dropped text/files
 pre-fill it — `Enter` sends / `Shift+Enter` newline, inline Approve/Deny for blocked
@@ -529,12 +530,13 @@ sessions, and a thinking-only in-flight bubble — no streamed text in the threa
 swaps the thread in place; there is no separate landing screen (`ChatHome` was removed).
 `ResultPanel`, `HistoryList`, `WelcomeOverlay`, `ShortcutSheet` and `ErrorState`
 round out the rest, all over a typed IPC layer (`lib/tauri.ts`), with a design-token CSS
-split (`tokens.css` / `palette.css` / `settings.css` / `fonts.css`). The visual language —
-an Apple-native floating glass utility (very large continuous radii, pill bars, circular
-icon targets, quiet grayscale materials with inset highlights) in the brand's monochrome
-palette (ink accent in light mode, snow in dark, colour only for status) and Geist /
-Geist Mono (bundled, OFL) — lives entirely in the tokens; components consume tokens and
-never hard-code colors. The brand mark is drawn inline (`HandoverMark` in `Icons.tsx`).
+split (`tokens.css` / `palette.css` / `settings.css` / `fonts.css`). The visual language
+matches the palette shown on the website — a solid floating card (16px radius, hairline
+border, one soft shadow; the opacity setting can still make it translucent), 8–12px
+controls, small mono caps for group labels, mono meta and keycaps, a three-square
+thinking loader — in the brand's monochrome palette (ink accent in light mode, snow in
+dark, colour only for status) with Geist / Geist Mono (bundled, OFL). It lives entirely
+in the tokens and stylesheets; components consume tokens and never hard-code colors. The brand mark is drawn inline (`HandoverMark` in `Icons.tsx`).
 First-run onboarding is a teach-by-doing overlay (dismissed by the hotkey again); a `?`
 cheat sheet lists the shortcuts; drag-and-drop capture accepts text via DOM events and
 file paths via Tauri's native `tauri://drag-enter/leave/drop` events (WKWebView blocks

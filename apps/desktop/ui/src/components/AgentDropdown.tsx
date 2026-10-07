@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { AgentLogo, Icon } from "../Icons";
-import { truncate } from "../lib/format";
+import { sessionTimeLabel, truncate } from "../lib/format";
 import type { AgentMetaStatus, LiveSession } from "../lib/types";
 
 /** One agent entry as handed to the dropdown (agent + its freshest session). */
@@ -42,12 +42,23 @@ function isProviderDown(item: DdItem): boolean {
   return !!item.agent.status.provider_down;
 }
 
+/** The quiet right-hand detail on a row: what Handover would resume into
+ *  ("working", "session · 2:14 PM"), or that the agent is merely installed. */
+function agentMeta(item: DdItem): string {
+  if (!item.agent.status.available) return "not found";
+  const session = item.session;
+  if (session?.activity === "working") return "working";
+  if (session) return `session · ${sessionTimeLabel(session.updated_at)}`;
+  return "installed";
+}
+
 /**
  * The agent dropdown — replaces the old search + list landing with a single
  * smooth picker. The trigger names the agent being chatted with (logo, name,
  * one green/red light); opening it reveals every agent grouped Running now /
  * Available / Not found, keyboard-navigable (↑↓ Enter Esc). Rows are lean:
- * logo, name, and the same light — only a blocked agent carries extra words
+ * logo, name, the same light, and a mono detail on the right (session time,
+ * "installed") — only a blocked or provider-down agent carries extra words
  * ("blocked · approve?" plus its pending question). The chat lives DIRECTLY
  * BENEATH the trigger — choosing an agent never navigates away.
  */
@@ -171,6 +182,9 @@ export default function AgentDropdown({
                         </span>
                       )}
                     </span>
+                    {!blocked && !providerDown && (
+                      <span className="agent-meta">{agentMeta(item)}</span>
+                    )}
                   </button>
                 );
               })}
