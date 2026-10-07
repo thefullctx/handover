@@ -2,8 +2,9 @@
    Handover — design tokens
    Visual language: native macOS floating glass utility — very large
    continuous radii, pill bars, circular icon targets, layered inset
-   highlights, fine 1px translucent rims, broad soft shadows, and restrained
-   grayscale surfaces with one controlled Apple-blue focus accent.
+   highlights, fine 1px translucent rims, broad soft shadows. Monochrome
+   (brand kit): neutral grays, an ink/snow accent, and colour only where it
+   carries status.
    Theme via <html data-theme> (main.tsx). Media-query fallback pre-bootstrap.
    ========================================================================== */
 
@@ -14,22 +15,24 @@
      so glass/pill fills use this alpha and stay in sync. Range 0.4–1.0. */
   --ui-opacity: 1;
 
-  /* Brand accent — one controlled Apple-blue, used only for focus/caret/live. */
-  --accent: #007aff;
-  --accent-hover: #2b87ff;
-  --accent-soft: rgba(0, 122, 255, 0.10);
-  --accent-softer: rgba(0, 122, 255, 0.05);
-  --accent-glow: rgba(0, 122, 255, 0.28);
+  /* Accent — monochrome: ink in light mode, snow in dark. Used for focus,
+     caret, live state and checked controls; never a hue. */
+  --accent: #111111;
+  --accent-hover: #2b2b2b;
+  --accent-soft: rgba(17, 17, 17, 0.08);
+  --accent-softer: rgba(17, 17, 17, 0.04);
+  --accent-glow: rgba(17, 17, 17, 0.18);
+  /* Content drawn ON the accent (switch knobs, filled badges). */
+  --accent-fg: #ffffff;
 
-  /* Light surfaces — warm off-white glass (reference: frosted translucent
-     panel with a bright rim and quiet gray interior). */
-  --bg: #e6e5e2;
-  --bg-elevated: #efeeeb;
-  --surface-solid: #f6f5f2;
-  --glass-rgb: 247, 246, 243;
+  /* Light surfaces — neutral white glass, no warm tint. */
+  --bg: #ededeb;
+  --bg-elevated: #f4f4f2;
+  --surface-solid: #fafaf9;
+  --glass-rgb: 250, 250, 249;
   --pill-rgb: 255, 255, 255;
-  --surface-2-rgb: 238, 237, 233;
-  --surface-3-rgb: 229, 228, 223;
+  --surface-2-rgb: 242, 242, 240;
+  --surface-3-rgb: 233, 233, 230;
   --surface: rgba(var(--glass-rgb), var(--ui-opacity));
   --surface-2: rgba(var(--surface-2-rgb), var(--ui-opacity));
   --surface-3: rgba(var(--surface-3-rgb), var(--ui-opacity));
@@ -39,21 +42,22 @@
   --pill-fill: rgba(var(--pill-rgb), var(--ui-opacity));
   --pill-fill-strong: rgba(var(--pill-rgb), var(--ui-opacity));
   --circle-btn: #ffffff;
-  --circle-btn-fg: #1d1d1f;
+  --circle-btn-fg: #111111;
 
-  /* Quiet interaction materials — light material change, never harsh color. */
   --hover-fill: rgba(0, 0, 0, 0.045);
-  --selected-fill: rgba(0, 0, 0, 0.07);
-  --bubble-user: rgba(255, 255, 255, 0.92);
+  --selected-fill: rgba(0, 0, 0, 0.075);
+  --bubble-user: rgba(255, 255, 255, 0.95);
 
-  /* Apple system grays. */
-  --text: #1d1d1f;
-  --text-secondary: #6e6e73;
-  --text-tertiary: #98989d;
+  /* Ink grays (brand kit: ink / muted / faint). */
+  --text: #111111;
+  --text-secondary: #6b6b6b;
+  --text-tertiary: #9a9a9a;
 
-  --border: rgba(0, 0, 0, 0.07);
-  --border-strong: rgba(0, 0, 0, 0.13);
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
 
+  /* Status colours carry meaning (running / provider down / failed) and are
+     the only hues in the UI. */
   --success: #1e9a5c;
   --success-soft: rgba(30, 154, 92, 0.10);
   --warning: #b06a0c;
@@ -93,52 +97,53 @@
   --dur: 200ms;
   --dur-slow: 320ms;
 
-  /* UI: SF Pro system font stack — first class on macOS, clean fallbacks. */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+  /* UI: Geist + Geist Mono (brand typefaces, OFL, bundled in assets/fonts),
+     with the system stack as fallback. */
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Helvetica Neue", "Segoe UI", Roboto, sans-serif;
-  --font-mono: "SF Mono", ui-monospace, Menlo, Monaco, monospace;
+  --font-mono: "Geist Mono", "SF Mono", ui-monospace, Menlo, Monaco, monospace;
   --blur: 28px;
 }
 
 /* --------------------------------------------------------------------------
-   Dark — deep warm charcoal glass (reference: near-black warm panel, soft
-   top-light rim, slightly lighter elevated materials)
+   Dark
    -------------------------------------------------------------------------- */
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --accent: #0a84ff;
-  --accent-hover: #409cff;
-  --accent-soft: rgba(10, 132, 255, 0.16);
-  --accent-softer: rgba(10, 132, 255, 0.08);
-  --accent-glow: rgba(10, 132, 255, 0.30);
+  --accent: #f5f5f5;
+  --accent-hover: #ffffff;
+  --accent-soft: rgba(245, 245, 245, 0.12);
+  --accent-softer: rgba(245, 245, 245, 0.06);
+  --accent-glow: rgba(245, 245, 245, 0.22);
+  --accent-fg: #111111;
 
-  /* Dark charcoal — deep, warm-toned, low-noise. */
-  --bg: #1f1f20;
-  --bg-elevated: #2c2c2e;
-  --surface-solid: #262627;
-  --glass-rgb: 33, 33, 35;
-  --pill-rgb: 48, 48, 51;
-  --surface-2-rgb: 48, 48, 51;
-  --surface-3-rgb: 56, 56, 59;
+  /* Dark — neutral near-black glass. */
+  --bg: #121213;
+  --bg-elevated: #1c1c1d;
+  --surface-solid: #171718;
+  --glass-rgb: 23, 23, 24;
+  --pill-rgb: 38, 38, 40;
+  --surface-2-rgb: 38, 38, 40;
+  --surface-3-rgb: 46, 46, 48;
   --surface: rgba(var(--glass-rgb), var(--ui-opacity));
   --surface-2: rgba(var(--surface-2-rgb), var(--ui-opacity));
   --surface-3: rgba(var(--surface-3-rgb), var(--ui-opacity));
   --glass-fill: rgba(var(--glass-rgb), var(--ui-opacity));
-  --glass-rim: rgba(255, 255, 255, 0.11);
-  --glass-rim-inner: rgba(255, 255, 255, 0.055);
+  --glass-rim: rgba(255, 255, 255, 0.10);
+  --glass-rim-inner: rgba(255, 255, 255, 0.05);
   --pill-fill: rgba(var(--pill-rgb), var(--ui-opacity));
-  --pill-fill-strong: rgba(56, 56, 59, var(--ui-opacity));
-  --circle-btn: #f5f5f7;
-  --circle-btn-fg: #1d1d1f;
+  --pill-fill-strong: rgba(46, 46, 48, var(--ui-opacity));
+  --circle-btn: #f5f5f5;
+  --circle-btn-fg: #111111;
 
   --hover-fill: rgba(255, 255, 255, 0.05);
-  --selected-fill: rgba(255, 255, 255, 0.085);
-  --bubble-user: rgba(255, 255, 255, 0.085);
+  --selected-fill: rgba(255, 255, 255, 0.09);
+  --bubble-user: rgba(255, 255, 255, 0.08);
 
-  --text: #f5f5f7;
-  --text-secondary: #aeaeb2;
-  --text-tertiary: #78787e;
+  --text: #f5f5f5;
+  --text-secondary: #a6a6a6;
+  --text-tertiary: #737373;
 
   --border: rgba(255, 255, 255, 0.085);
   --border-strong: rgba(255, 255, 255, 0.15);
@@ -161,37 +166,39 @@
   :root:not([data-theme]) {
     color-scheme: dark;
 
-    --accent: #0a84ff;
-    --accent-hover: #409cff;
-    --accent-soft: rgba(10, 132, 255, 0.16);
-    --accent-softer: rgba(10, 132, 255, 0.08);
-    --accent-glow: rgba(10, 132, 255, 0.30);
+    --accent: #f5f5f5;
+    --accent-hover: #ffffff;
+    --accent-soft: rgba(245, 245, 245, 0.12);
+    --accent-softer: rgba(245, 245, 245, 0.06);
+    --accent-glow: rgba(245, 245, 245, 0.22);
+    --accent-fg: #111111;
 
-    --bg: #1f1f20;
-    --bg-elevated: #2c2c2e;
-    --surface-solid: #262627;
-    --glass-rgb: 33, 33, 35;
-    --pill-rgb: 48, 48, 51;
-    --surface-2-rgb: 48, 48, 51;
-    --surface-3-rgb: 56, 56, 59;
+    /* Dark — neutral near-black glass. */
+    --bg: #121213;
+    --bg-elevated: #1c1c1d;
+    --surface-solid: #171718;
+    --glass-rgb: 23, 23, 24;
+    --pill-rgb: 38, 38, 40;
+    --surface-2-rgb: 38, 38, 40;
+    --surface-3-rgb: 46, 46, 48;
     --surface: rgba(var(--glass-rgb), var(--ui-opacity));
     --surface-2: rgba(var(--surface-2-rgb), var(--ui-opacity));
     --surface-3: rgba(var(--surface-3-rgb), var(--ui-opacity));
     --glass-fill: rgba(var(--glass-rgb), var(--ui-opacity));
-    --glass-rim: rgba(255, 255, 255, 0.11);
-    --glass-rim-inner: rgba(255, 255, 255, 0.055);
+    --glass-rim: rgba(255, 255, 255, 0.10);
+    --glass-rim-inner: rgba(255, 255, 255, 0.05);
     --pill-fill: rgba(var(--pill-rgb), var(--ui-opacity));
-    --pill-fill-strong: rgba(56, 56, 59, var(--ui-opacity));
-    --circle-btn: #f5f5f7;
-    --circle-btn-fg: #1d1d1f;
+    --pill-fill-strong: rgba(46, 46, 48, var(--ui-opacity));
+    --circle-btn: #f5f5f5;
+    --circle-btn-fg: #111111;
 
     --hover-fill: rgba(255, 255, 255, 0.05);
-    --selected-fill: rgba(255, 255, 255, 0.085);
-    --bubble-user: rgba(255, 255, 255, 0.085);
+    --selected-fill: rgba(255, 255, 255, 0.09);
+    --bubble-user: rgba(255, 255, 255, 0.08);
 
-    --text: #f5f5f7;
-    --text-secondary: #aeaeb2;
-    --text-tertiary: #78787e;
+    --text: #f5f5f5;
+    --text-secondary: #a6a6a6;
+    --text-tertiary: #737373;
 
     --border: rgba(255, 255, 255, 0.085);
     --border-strong: rgba(255, 255, 255, 0.15);
@@ -207,6 +214,7 @@
     --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.32), 0 16px 48px rgba(0, 0, 0, 0.38);
     --shadow-pop: 0 2px 8px rgba(0, 0, 0, 0.26), 0 28px 64px rgba(0, 0, 0, 0.46),
       0 56px 120px rgba(0, 0, 0, 0.30);
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.30), 0 5px 15px rgba(0, 0, 0, 0.36);
   }
 }
 

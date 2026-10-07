@@ -531,9 +531,10 @@ swaps the thread in place; there is no separate landing screen (`ChatHome` was r
 round out the rest, all over a typed IPC layer (`lib/tauri.ts`), with a design-token CSS
 split (`tokens.css` / `palette.css` / `settings.css` / `fonts.css`). The visual language —
 an Apple-native floating glass utility (very large continuous radii, pill bars, circular
-icon targets, quiet grayscale materials with inset highlights, one controlled blue accent,
-SF Pro system font stack) — lives entirely in the tokens; components consume tokens and
-never hard-code colors.
+icon targets, quiet grayscale materials with inset highlights) in the brand's monochrome
+palette (ink accent in light mode, snow in dark, colour only for status) and Geist /
+Geist Mono (bundled, OFL) — lives entirely in the tokens; components consume tokens and
+never hard-code colors. The brand mark is drawn inline (`HandoverMark` in `Icons.tsx`).
 First-run onboarding is a teach-by-doing overlay (dismissed by the hotkey again); a `?`
 cheat sheet lists the shortcuts; drag-and-drop capture accepts text via DOM events and
 file paths via Tauri's native `tauri://drag-enter/leave/drop` events (WKWebView blocks

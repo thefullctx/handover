@@ -6,9 +6,9 @@ Implemented and verified end-to-end:
 - ✅ Global hotkey → chat-first palette (agent list → chat with the running agent); handoffs run off the UI thread
 - ✅ Agent dropdown + chat merged surface: rows are logo + name + one status dot — green (process actually running / session actively writing), red (installed idle), amber (provider down, with reason); blocked sessions keep `blocked · approve?`; keyboard-first selection; lights refresh live while the palette is open
 - ✅ Settings window (lazy-created; menu bar / `⌘,` / tray / palette gear) with Overlay traffic-light chrome: General (appearance, window opacity for palette + Settings, live shortcut re-register, launch at startup, notifications), Agents, Privacy, About
-- ✅ Apple-native floating-glass UI: shared light/dark design tokens, SF Pro system
-  font stack, large continuous radii, pill bars + circular controls, header tools,
-  metal H app icon + macOS template tray icon
+- ✅ Apple-native floating-glass UI in the monochrome brand: shared light/dark design
+  tokens, Geist / Geist Mono, large continuous radii, pill bars + circular controls,
+  header tools, "the pass" app icon + macOS template tray icon (brand kit in `brand/`)
 - ✅ Standardized Capture object (drag-and-drop text/files, CLI/API captures) — the palette is chat-first and sends messages verbatim; the clipboard is never read
 - ✅ Generic command agent adapter (`{PROMPT}`, `{PROMPT_FILE}`, stdin) + registry
 - ✅ Concurrent agent stdout/stderr drain, output caps, process-group timeout (Unix)

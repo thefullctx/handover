@@ -42,7 +42,7 @@ export default function AboutSection({ info, agents, onError }: Props) {
   return (
     <div className="about-body settings-body">
       <div className="about-logo">
-        <HandoverMark size={30} />
+        <HandoverMark size={60} tile />
       </div>
       <p className="about-title">Handover</p>
       <p className="about-version">Version {info.version}</p>
