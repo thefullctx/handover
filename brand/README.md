@@ -94,8 +94,7 @@ node build.mjs
 
 The build needs Chromium to render PNGs. It finds Playwright's cached headless
 shell automatically (`npx playwright install chromium-headless-shell`), or set
-`CHROME=/path/to/chrome`. It also refreshes the app's tray icons and the
-website's assets in `site/assets`. To regenerate the app icon set after changing the mark:
+`CHROME=/path/to/chrome`. It also refreshes the app's tray icons. To regenerate the app icon set after changing the mark:
 
 ```bash
 cd apps/desktop/src-tauri

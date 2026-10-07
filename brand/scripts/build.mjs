@@ -229,22 +229,5 @@ tray(32, "png/tray/trayTemplate-32.png");
 tray(1024, "png/tray/trayTemplate-source.png");
 for (const f of fs.readdirSync(out("png/tray"))) fs.copyFileSync(out(`png/tray/${f}`), path.join(icons, f));
 
-// The website ships its own copies (GitHub Pages serves only site/).
-const site = path.join(REPO, "site/assets");
-fs.mkdirSync(site, { recursive: true });
-for (const [from, to] of [
-  ["favicon/favicon.svg", "favicon.svg"],
-  ["favicon/favicon-32.png", "favicon-32.png"],
-  ["favicon/favicon-180.png", "apple-touch-icon.png"],
-  ["social/og-image.png", "og-image.png"],
-  ["logo/handover-lockup-on-light.svg", "handover-lockup.svg"],
-  ["logo/handover-glyph-on-light.svg", "handover-glyph.svg"],
-  ["png/handover-tile-128.png", "handover-tile.png"],
-  ["fonts/Geist-Medium.ttf", "Geist-Medium.ttf"],
-  ["fonts/Geist-SemiBold.ttf", "Geist-SemiBold.ttf"],
-  ["fonts/GeistMono-Medium.ttf", "GeistMono-Medium.ttf"],
-  ["fonts/OFL.txt", "OFL.txt"],
-]) fs.copyFileSync(out(from), path.join(site, to));
-
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log("brand kit built in", BRAND);
