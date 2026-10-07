@@ -64,6 +64,12 @@ export function copyText(text: string): Promise<void> {
   return invoke("copy_text", { text });
 }
 
+/** Opens an http(s) link from a reply in the default browser (Rust refuses
+ *  every other scheme). */
+export function openUrl(url: string): Promise<void> {
+  return invoke("open_url", { url });
+}
+
 export function notifyResult(title: string, body: string): Promise<void> {
   return invoke("notify_result", { title, body });
 }

@@ -160,8 +160,10 @@ in-session. Two deliberate design points:
   skipped. Without this, "Analyze the provided context and tell me what you
   recommend." wrapped around a casual question made agents answer
   "I don't see any new context in your message" instead of conversationally.
-- **Transparency**: every turn shows the exact rendered prompt under an expandable
-  "Prompt that was sent" disclosure — nothing the agent receives is hidden.
+- **Transparency**: nothing the agent receives is hidden. The thread shows just what
+  you typed (dropped context already sits in that text); the exact rendered prompt of
+  every handoff is in its result panel, opened from *Recent handoffs* (shown in full,
+  with **Copy prompt**).
 
 Failures render in-thread; while a message is in flight the bubble shows only a thinking
 animation, and the finished reply replaces it.
@@ -226,7 +228,7 @@ The palette never blocks on an agent: the daemon streams every stdout/stderr chu
 prompt's byte length the moment the send begins. The chat view derives an **observable
 phase** from that stream — *Sending context* (no output yet) → *Agent responding* (chunks
 flowing) → *Wrapping up* (stream idle >3s, reverting if output resumes) — and renders it as
-a quiet phase timeline inside a collapsible **Show activity** section, next to real
+a quiet phase timeline inside a collapsible **Activity** section, next to real
 measurements: prompt size (measured in Rust), time to first response and output volume
 (measured from the event stream). Nothing here is estimated or animated on a timer; a stat
 that has not been observed yet renders as `—`, not `0`. The in-flight bubble shows a live
@@ -242,9 +244,13 @@ they are never stored stale. Time to first response is the reason any of this is
 all: it only exists during the stream and cannot be recovered from the outcome afterwards.
 One global panel was wrong here — it made turn 1 report turn 2's numbers.
 
-Every turn also carries a **"Prompt that was sent"** disclosure: the exact rendered prompt
-the agent received (which may differ from what was typed — a chat message goes through the
-`ask` template, a captured file adds context headers), not just the text in the bubble.
+**Reading a turn.** Your message is a bubble with just its text. The reply is rendered as
+Markdown (`lib/markdown.tsx`: paragraphs, headings, lists, quotes, fenced code with Copy,
+inline code, bold, italic, links) by building React elements directly, never raw HTML, so
+agent output cannot inject markup. Links open through the `open_url` command, which accepts
+only `http(s)` URLs and is called only on a click. Under each reply one quiet line (agent ·
+time · duration, **Copy**, **Retry**, **Activity**) appears on hover or focus and always on
+the newest reply; Retry re-sends the same text into the same session.
 
 Completed handoffs land in the same thread, outcome-first in shape — the agent's answer as
 readable text, raw stdout/stderr and the prompt in expandable details — and the full

@@ -40,6 +40,7 @@ const tauri = vi.hoisted(() => {
     ) => invoke("send_handoff", { actionId, agentId, capture, sessionId: sessionId ?? null }),
     hidePalette: () => invoke("hide_palette"),
     copyText: (text: string) => invoke("copy_text", { text }),
+    openUrl: (url: string) => invoke("open_url", { url }),
     notifyResult: (title: string, body: string) => invoke("notify_result", { title, body }),
     openSettingsWindow: () => invoke("open_settings_window"),
     clearHistory: () => invoke("clear_history"),
@@ -559,11 +560,15 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("chat-activity-output-volume")).toHaveTextContent("15 B")
     );
-    const bubble = inflight.querySelector(".chat-bubble.agent") as HTMLElement;
-    expect(within(bubble).getByTestId("chat-thinking")).toBeInTheDocument();
-    expect(bubble).not.toHaveTextContent(/Working through/);
-    // The raw stream is only in the collapsed activity panel.
-    expect(within(inflight).getByTestId("chat-activity")).not.toHaveAttribute("open");
+    const thinking = within(inflight).getByTestId("chat-thinking");
+    expect(thinking).toHaveTextContent("Thinking…");
+    expect(thinking).not.toHaveTextContent(/Working through/);
+    // The raw stream exists only inside the collapsed activity panel.
+    const activity = within(inflight).getByTestId("chat-activity");
+    expect(activity).not.toHaveAttribute("open");
+    expect(within(inflight).getByText(/Working through/).closest('[data-testid="chat-activity"]')).toBe(
+      activity
+    );
 
     pending.resolve(makeOutcome());
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
@@ -666,7 +671,7 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     expect(screen.getByTestId("chat-activity-0-output-volume")).toHaveTextContent(/B|KB/);
   });
 
-  it("shows the exact prompt sent, not just what was typed", async () => {
+  it("shows your message as just its text, with no label or prompt disclosure", async () => {
     const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
     await chooseAgent(user, /Codex/);
     const composer = screen.getByLabelText("Chat message");
@@ -677,16 +682,39 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
       expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
 
-    // Transparency: the rendered prompt the agent received is one click away.
-    const details = screen.getByText("Prompt that was sent").closest("details");
-    expect(details).not.toBeNull();
-    // The bubble itself shows the capture; the disclosure shows what the agent
-    // ACTUALLY got (the capture wrapped by the action template).
-    const bubble = screen.getByText("Prompt that was sent").closest(".chat-bubble.user");
-    expect(bubble).toHaveTextContent("panic: something exploded");
-    expect(details!.querySelector("pre")).toHaveTextContent(
-      "Investigate this issue and fix it. Context: panic: something exploded"
+    const bubble = document.querySelector(".chat-bubble.user") as HTMLElement;
+    expect(bubble).toHaveTextContent(/^panic: something exploded$/);
+    expect(screen.queryByText("You")).not.toBeInTheDocument();
+    // The exact prompt is no longer in the thread (Recent handoffs keeps
+    // Copy prompt for it).
+    expect(screen.queryByText("Prompt that was sent")).not.toBeInTheDocument();
+  });
+
+  it("copies a reply and retries the same message from the line under it", async () => {
+    const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
+    await chooseAgent(user, /Codex/);
+    const composer = screen.getByLabelText("Chat message");
+    await user.click(composer);
+    await user.keyboard("what's next");
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
+    const meta = screen.getByTestId("reply-meta-0");
+
+    await user.click(within(meta).getByRole("button", { name: /Copy/ }));
+    const copies = tauri.invoke.mock.calls.filter((c) => c[0] === "copy_text");
+    expect(copies[copies.length - 1]?.[1]).toEqual({
+      text: "Fixed the panic by adding a null check.\nDone.",
+    });
+    expect(within(meta).getByRole("button", { name: /Copied/ })).toBeInTheDocument();
+
+    const before = sentCalls().length;
+    await user.click(within(meta).getByRole("button", { name: /Retry/ }));
+    await waitFor(() => expect(sentCalls().length).toBe(before + 1));
+    const sent = sentCalls();
+    const retried = sent[sent.length - 1]?.[1] as { capture: { content: { text: string } } };
+    expect(retried.capture.content.text).toBe("panic: something exploded");
   });
 
   it("does not carry the previous handoff's prompt size into the next one", async () => {

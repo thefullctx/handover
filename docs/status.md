@@ -16,9 +16,9 @@ Implemented and verified end-to-end:
 - ✅ Chat delivers messages verbatim into the resumed session (`ask` template, no preamble) — the composer opens clean, dropped text/files pre-fill it, and nothing sends without an explicit `Enter`
 - ✅ Live handoff feedback: stream-derived phase timeline (sending context → agent responding →
   wrapping up), per-turn collapsible activity (each exchange reports its own
-  prompt-size / first-response / output stats), per-turn
-  "Prompt that was sent" disclosure, completions that stay in the thread, with the full result
-  panel (copy, follow-up, repeat, retry) one click from Recent handoffs
+  prompt-size / first-response / output stats), replies rendered as Markdown with Copy /
+  Retry under each, completions that stay in the thread, with the full result panel
+  (copy answer, copy prompt, follow-up, repeat, retry) one click from Recent handoffs
 - ✅ First-run onboarding (teach by doing — the hotkey press dismisses it) with a "pick your
   assistants" step (detected agents, one-tap add) and a `?` keyboard cheat sheet
 - ✅ Drag-and-drop capture (text, text files, images by path) via DOM events + native `tauri://drag-*` file events
@@ -45,9 +45,8 @@ Implemented and verified end-to-end:
 - ✅ Live chat in the palette: threaded conversation that resumes the SAME session (explicit
   `session_id` on every message), messages delivered verbatim (no action preamble — the
   exact text you type is exactly what the agent receives), thinking animation until the
-  finished reply + per-turn
-  "Prompt that was sent" transparency
-- ✅ 218 Rust unit tests + 67 Vitest/Testing Library tests covering the keyboard-first flows
+  finished reply, Markdown replies, and the exact prompt one step away in Recent handoffs
+- ✅ 219 Rust unit tests + 75 Vitest/Testing Library tests covering the keyboard-first flows
   and the session/approval/chat/activity layers; `cargo clippy --workspace --all-targets` is
   warning-free (enforced in CI — see [.github/workflows/ci.yml](../.github/workflows/ci.yml))
 - ✅ Production Content Security Policy (never disabled); prompt temp-cache dir overridable with `HANDOVER_PROMPT_CACHE_DIR` for sandboxed CI

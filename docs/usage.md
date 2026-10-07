@@ -28,7 +28,10 @@
   newline), and every message resumes the same session so the agent keeps the
   conversation context. While waiting you see only a quiet thinking animation, then the
   finished reply; progress text, thoughts and CLI banners the agent prints along the way
-  are never shown in the thread.
+  are never shown in the thread. Replies are formatted (lists, code blocks with **Copy**,
+  links that open in your browser). Hover a reply for **Copy**, **Retry** (sends the same
+  message again) and **Activity**; on the newest reply they are always shown. The exact
+  prompt each handoff sent is in its result panel under *Recent handoffs*.
 
 The first time you chat with an agent it becomes your default — next time you can go straight
 through: `⌘⇧A → Enter → Enter`.
@@ -39,10 +42,11 @@ You are never left wondering what happened after the handoff:
 
 - **Sending** — the in-flight turn shows a quiet thinking animation and a live elapsed timer
   (`Codex is working · 12s`); the reply appears once the agent finishes. The raw output
-  stream is under **Show activity** if you want it. Press `esc` to dismiss
+  stream is under **Activity** if you want it. Press `esc` to dismiss
   the palette — the handoff keeps running and a **native macOS notification** still fires on
   completion (the banner belongs to Handover; clicking it activates the app, not Script Editor).
-- **Activity** — every exchange carries its own collapsible **Show activity** section holding the raw agent output plus a phase
+- **Activity** — every exchange carries its own collapsible **Activity** section (in the line
+  under the reply) holding the raw agent output plus a phase
   timeline (Sending context → Agent responding → Wrapping up) and real measurements: the rendered
   **prompt size**, **time to first response**, and live **output volume**. The phase is *derived
   from the output stream*, not guessed: no output yet is "Sending context", flowing output is

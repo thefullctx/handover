@@ -298,6 +298,7 @@ fn main() {
             recent_handoffs,
             set_preference,
             copy_text,
+            open_url,
             hide_palette,
             notify_result
         ])
@@ -1247,6 +1248,41 @@ fn copy_text(text: String) -> Result<(), String> {
     dcap::set_clipboard_text(&text).map_err(|e| e.to_string())
 }
 
+/// True for a link a chat reply may open: plain `http(s)://` only, with no
+/// whitespace or control characters. Never `file:`, `javascript:` or app
+/// schemes — the text comes from agent output, not from the user.
+fn is_openable_url(url: &str) -> bool {
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"));
+    matches!(rest, Some(r) if !r.is_empty())
+        && !url.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+/// Opens a link from a chat reply in the default browser. Called only from an
+/// explicit click; the URL is passed as one argument, never through a shell.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    let url = url.trim();
+    if !is_openable_url(url) {
+        return Err("Only web links (http or https) can be opened.".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(target_os = "linux")]
+    let mut cmd = std::process::Command::new("xdg-open");
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("rundll32");
+        c.arg("url.dll,FileProtocolHandler");
+        c
+    };
+    cmd.arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("could not open the link: {e}"))
+}
+
 #[tauri::command]
 fn hide_palette(app: AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -1314,4 +1350,26 @@ fn native_notify(app: &AppHandle, title: &str, body: &str, critical: bool) {
         log::warn!("notification permission not granted; falling back to osascript/notify-send");
     }
     notify::notify(title, body);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_openable_url;
+
+    #[test]
+    fn only_plain_web_links_can_be_opened_from_a_reply() {
+        assert!(is_openable_url("https://github.com/thefullctx/handover"));
+        assert!(is_openable_url("http://127.0.0.1:8001/v1"));
+        for bad in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "vscode://open?file=x",
+            "https://",
+            "https://example.com/a b",
+            "https://example.com/\nrm",
+            "-a Calculator",
+        ] {
+            assert!(!is_openable_url(bad), "should refuse: {bad:?}");
+        }
+    }
 }

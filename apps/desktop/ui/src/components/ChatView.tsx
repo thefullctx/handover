@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { copyText } from "../lib/tauri";
+import { Markdown } from "../lib/markdown";
 import { Icon } from "../Icons";
 import { byteLength, captureSnippet, cleanReply, failureMessage, fmtBytes, fmtDuration, fmtMs, PHASE_STEPS, phaseIndex, sessionTimeLabel, truncate } from "../lib/format";
 import type { AgentMeta, ApprovalResult, ChatTurn, HandoffActivity, LiveSession } from "../lib/types";
@@ -73,7 +75,7 @@ function ActivitySection({ activity, testId }: { activity: HandoffActivity; test
     <details className="chat-activity" data-testid={testId}>
       <summary>
         <Icon name="activity" size={12} />
-        Show activity
+        Activity
       </summary>
       <div className="activity-body">
         {/* Phase timeline — the current phase is derived from the output
@@ -124,10 +126,12 @@ function ActivitySection({ activity, testId }: { activity: HandoffActivity; test
 /**
  * The palette's live chat: a threaded conversation that keeps resuming the
  * SAME session (`session_id` is passed explicitly on every send, never left
- * to freshest-resolution), with the exact rendered prompt shown expandable
- * under each user bubble — what the agent received is never hidden. While a
- * message is in flight the thread shows a streaming bubble; completion appends
- * the turn in place, so a chat is many replies, not one.
+ * to freshest-resolution). Your message is a bubble with just its text; the
+ * reply reads as formatted Markdown with a quiet line under it (agent · time ·
+ * duration, Copy, Retry, Activity) that shows on hover and always on the
+ * newest reply. The exact rendered prompt stays one step away in Recent
+ * handoffs (Copy prompt). While a message is in flight the thread shows only
+ * the thinking state; completion appends the turn in place.
  */
 export default function ChatView({
   agent,
@@ -146,6 +150,7 @@ export default function ChatView({
   const [text, setText] = useState("");
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [copiedTurn, setCopiedTurn] = useState<number | null>(null);
   const sending = sendingText !== null;
   const blocked = !!session?.blocked;
 
@@ -158,10 +163,32 @@ export default function ChatView({
     if (draft !== undefined) setText(draft);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftSignal]);
+  // The composer grows with its text (up to the CSS max-height), then scrolls.
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text]);
+
+  // Glide to the newest turn (jump when the user prefers reduced motion).
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (typeof el.scrollTo === "function") {
+      el.scrollTo({ top: el.scrollHeight, behavior: reduce ? "auto" : "smooth" });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [turns.length, sending]);
+
+  const copyReply = (i: number, reply: string) => {
+    if (!reply) return;
+    void copyText(reply);
+    setCopiedTurn(i);
+    setTimeout(() => setCopiedTurn((c) => (c === i ? null : c)), 1400);
+  };
 
   const send = () => {
     const t = text.trim();
@@ -199,73 +226,85 @@ export default function ChatView({
           // Each turn reports its OWN measurements — a single global panel
           // made turn 1 display turn 2's numbers.
           const activity = turnActivity(turn);
+          const latest = i === turns.length - 1 && !sending;
           return (
-            <div className="chat-turn" key={i}>
+            <div className={`chat-turn${latest ? " latest" : ""}`} key={i}>
               <div className="chat-row user">
                 <div className="chat-bubble user">
-                  <span className="chat-meta">You</span>
                   <span className="chat-text">{truncate(mine, 8000) || "—"}</span>
-                  {/* Transparency: the exact prompt the agent received —
-                      not what you typed, which may have been wrapped by an
-                      action template. Nothing sent is ever hidden. */}
-                  {turn.outcome.prompt && (
-                    <details className="chat-details">
-                      <summary>Prompt that was sent</summary>
-                      <pre className="prompt">{truncate(turn.outcome.prompt, 8000)}</pre>
-                    </details>
-                  )}
                 </div>
               </div>
-              <div className="chat-row agent">
-                <div className={`chat-bubble agent${ok ? "" : " fail"}`}>
-                  <span className="chat-meta">
+              <div className={`chat-reply${ok ? "" : " fail"}`}>
+                {ok ? (
+                  reply ? (
+                    <div className="chat-md" data-testid="chat-reply">
+                      <Markdown text={truncate(reply, 8000)} />
+                    </div>
+                  ) : (
+                    <p className="chat-text muted">
+                      The agent finished without returning text output.
+                    </p>
+                  )
+                ) : (
+                  <>
+                    <p className="chat-text error">{failureMessage(turn.outcome)}</p>
+                    {(turn.outcome.receipt?.stderr?.trim() ||
+                      turn.outcome.receipt?.stdout?.trim()) && (
+                      <details className="chat-details">
+                        <summary>Agent output</summary>
+                        <pre className="err">
+                          {truncate(
+                            turn.outcome.receipt?.stderr?.trim() ||
+                              turn.outcome.receipt?.stdout?.trim() ||
+                              "",
+                            4000
+                          )}
+                        </pre>
+                      </details>
+                    )}
+                  </>
+                )}
+                <div className="reply-meta" data-testid={`reply-meta-${i}`}>
+                  <span className="reply-info">
                     {agent.name}
                     <span className="dot-sep">·</span>
                     {turn.outcome.created_at
                       ? sessionTimeLabel(turn.outcome.created_at)
                       : "just now"}
                     {turn.outcome.receipt?.duration_ms != null && (
-                      <span className="chat-dur" title="Time to reply">
-                        {fmtDuration(turn.outcome.receipt.duration_ms)}
-                      </span>
+                      <>
+                        <span className="dot-sep">·</span>
+                        <span title="Time to reply">
+                          {fmtDuration(turn.outcome.receipt.duration_ms)}
+                        </span>
+                      </>
                     )}
                   </span>
-                  {ok ? (
-                    reply ? (
-                      <span className="chat-text" data-testid="chat-reply">
-                        {truncate(reply, 8000)}
-                      </span>
-                    ) : (
-                      <span className="chat-text muted">
-                        The agent finished without returning text output.
-                      </span>
-                    )
-                  ) : (
-                    <>
-                      <span className="chat-text error">
-                        {failureMessage(turn.outcome)}
-                      </span>
-                      {(turn.outcome.receipt?.stderr?.trim() ||
-                        turn.outcome.receipt?.stdout?.trim()) && (
-                        <details className="chat-details">
-                          <summary>Agent output</summary>
-                          <pre className="err">
-                            {truncate(
-                              turn.outcome.receipt?.stderr?.trim() ||
-                                turn.outcome.receipt?.stdout?.trim() ||
-                                "",
-                              4000
-                            )}
-                          </pre>
-                        </details>
-                      )}
-                    </>
+                  {ok && reply && (
+                    <button
+                      type="button"
+                      className="reply-btn"
+                      onClick={() => copyReply(i, reply)}
+                    >
+                      <Icon name={copiedTurn === i ? "check" : "copy"} size={12} />
+                      {copiedTurn === i ? "Copied" : "Copy"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="reply-btn"
+                    disabled={sending || !mine}
+                    onClick={() => onSend(mine)}
+                    title="Send the same message again"
+                  >
+                    <Icon name="refresh" size={12} />
+                    Retry
+                  </button>
+                  {activity && (
+                    <ActivitySection activity={activity} testId={`chat-activity-${i}`} />
                   )}
                 </div>
               </div>
-              {activity && (
-                <ActivitySection activity={activity} testId={`chat-activity-${i}`} />
-              )}
             </div>
           );
         })}
@@ -274,28 +313,27 @@ export default function ChatView({
           <div className="chat-turn" data-testid="chat-inflight">
             <div className="chat-row user">
               <div className="chat-bubble user">
-                <span className="chat-meta">You</span>
                 <span className="chat-text">{truncate(sendingText ?? "", 8000)}</span>
               </div>
             </div>
-            <div className="chat-row agent">
-              <div className="chat-bubble agent working">
-                <span className="chat-meta">
+            <div className="chat-reply working">
+              {/* Only the thinking state while in flight: streamed text
+                  (progress, thoughts, partial reply) is never shown here.
+                  The finished reply replaces it; the raw stream stays
+                  available in the activity panel. */}
+              <span className="chat-thinking" data-testid="chat-thinking">
+                <span className="pixel-loader" aria-hidden="true" />
+                Thinking…
+              </span>
+              <div className="reply-meta">
+                <span className="reply-info">
                   <span className="status-dot ok" />
                   {agent.name} is working{elapsed > 0 ? ` · ${elapsed}s` : ""}
                 </span>
-                {/* Only the thinking state while in flight: streamed text
-                    (progress, thoughts, partial reply) is never shown here.
-                    The finished reply replaces this bubble; the raw stream
-                    stays available in the activity panel. */}
-                <span className="chat-thinking" data-testid="chat-thinking">
-                  <span className="pixel-loader" aria-hidden="true" />
-                  Thinking…
-                </span>
+                {/* The in-flight turn owns the live panel; once it completes
+                    the measurements are snapshotted onto the turn itself. */}
+                {activity && <ActivitySection activity={activity} testId="chat-activity" />}
               </div>
-              {/* The in-flight turn owns the live panel; once it completes the
-                  measurements are snapshotted onto the turn itself. */}
-              {activity && <ActivitySection activity={activity} testId="chat-activity" />}
             </div>
           </div>
         )}
