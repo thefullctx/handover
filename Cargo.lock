@@ -292,7 +292,7 @@ dependencies = [
  "dirs 6.0.0",
  "os_info",
  "smappservice-rs",
- "thiserror 2.0.20",
+ "thiserror 2.0.21",
  "windows-registry",
  "windows-result 0.4.1",
 ]
@@ -727,7 +727,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -3616,7 +3616,7 @@ dependencies = [
  "objc2",
  "objc2-foundation",
  "objc2-service-management",
- "thiserror 2.0.20",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -4013,9 +4013,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-notification"
-version = "2.5.1"
+version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "533770889abb60a0407d5a32096182f0e6463f5a3dfaa675be94580aa14070e1"
+checksum = "8cf3cce3ea492b3a8a7f431a4e5dd5d31dc41b2a4a243faa660cbe8095a577bd"
 dependencies = [
  "log",
  "notify-rust",
@@ -4028,6 +4028,7 @@ dependencies = [
  "thiserror 2.0.21",
  "time",
  "url",
+ "zbus",
 ]
 
 [[package]]
