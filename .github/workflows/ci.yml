@@ -48,7 +48,7 @@ jobs:
           toolchain: 1.97.1
           components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       # The workspace includes the Tauri desktop crate, so the Linux runner
       # needs Tauri's system dependencies before clippy/tests can even
@@ -127,7 +127,7 @@ jobs:
         with:
           toolchain: 1.97.1
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       # daemon -> local HTTP API -> CLI -> demo agent, end to end, against a
       # throwaway HOME.
