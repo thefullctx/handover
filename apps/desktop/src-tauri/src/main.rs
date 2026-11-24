@@ -172,9 +172,9 @@ fn main() {
                     .radius(PALETTE_CORNER_RADIUS)
                     .build(),
             );
-            let window = palette_builder.build()?;
+            let _window = palette_builder.build()?;
             #[cfg(target_os = "macos")]
-            clip_palette_corners(&window, PALETTE_CORNER_RADIUS);
+            clip_palette_corners(&_window, PALETTE_CORNER_RADIUS);
 
             // Apply the persisted appearance to native chrome; frontend
             // mirrors it into CSS from `app_info` / `appearance:changed`.
