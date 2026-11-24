@@ -7,48 +7,29 @@ import type { AgentMeta, ApprovalResult, ChatTurn, HandoffActivity, LiveSession 
 import ApprovalCard from "./ApprovalCard";
 
 interface Props {
-  /** The agent being chatted with (named in bubbles + composer). */
+  /** The agent being chatted with. */
   agent: AgentMeta;
-  /** The live session being resumed. `null` = no session to resume — each
-   *  message falls back to the daemon's normal resolution (honest chip). */
+  /** The live session being resumed. */
   sessionId: string | null;
   /** The agent's freshest live session (drives the blocked approval card). */
   session?: LiveSession | null;
   /** The conversation so far, oldest first. */
   turns: ChatTurn[];
-  /** Text of the message currently in flight (renders the in-flight user
-   *  bubble). `null` = nothing sending. */
+  /** Text of the message currently in flight. `null` = nothing sending. */
   sendingText: string | null;
   elapsed: number;
-  /** Real measurements for the collapsible "Show activity" section (phase
-   *  timeline, prompt size, time to first response, output volume). `null`
-   *  when there is nothing to show yet. */
+  /** Real measurements for the collapsible "Activity" section. */
   activity?: HandoffActivity | null;
-  /** Composer prefill (captured clipboard / dropped context). Re-applied
-   *  whenever `draftSignal` changes. */
+  /** Composer prefill (dropped context). Re-applied whenever `draftSignal` changes. */
   draft?: string;
   draftSignal?: number;
-  /** Approve/deny when the resumed session is parked at an approval prompt
-   *  (only the explicit button press injects). */
+  /** Approve/deny when the resumed session is parked at an approval prompt. */
   onApprove?: (approve: boolean) => void;
   approving?: boolean;
   approvalNote?: ApprovalResult | null;
   onSend: (text: string) => void;
 }
 
-/**
- * Builds the activity payload for a *finished* turn.
- *
- * Output volume and phase are derivable from the outcome itself, so they are
- * derived here rather than stored. Prompt size comes from the daemon's own
- * measurement when the turn streamed; turns reopened from history never
- * streamed, so it falls back to measuring the prompt we do have. Time to first
- * response is the one value that cannot be recovered after the fact and is
- * carried on the turn itself.
- *
- * Returns `null` when there is nothing worth showing, so a turn with no
- * receipt and no measurements renders no panel rather than an empty one.
- */
 function turnActivity(turn: ChatTurn): HandoffActivity | null {
   const output = [turn.outcome.receipt?.stdout ?? "", turn.outcome.receipt?.stderr ?? ""]
     .filter(Boolean)
@@ -67,9 +48,6 @@ function turnActivity(turn: ChatTurn): HandoffActivity | null {
   };
 }
 
-/** The collapsible "Show activity" panel — phase timeline, measured stats and
- *  the raw agent output. Rendered per turn so each exchange reports its own
- *  numbers, and live on the in-flight turn while it streams. */
 function ActivitySection({ activity, testId }: { activity: HandoffActivity; testId: string }) {
   return (
     <details className="chat-activity" data-testid={testId}>
@@ -78,8 +56,6 @@ function ActivitySection({ activity, testId }: { activity: HandoffActivity; test
         Activity
       </summary>
       <div className="activity-body">
-        {/* Phase timeline — the current phase is derived from the output
-            stream in App.tsx, never animated on a timer. */}
         <ol className="activity-phases" data-testid={`${testId}-phases`}>
           {PHASE_STEPS.map((step, idx) => {
             const active = phaseIndex(activity.phase) === idx;
@@ -124,14 +100,7 @@ function ActivitySection({ activity, testId }: { activity: HandoffActivity; test
 }
 
 /**
- * The palette's live chat: a threaded conversation that keeps resuming the
- * SAME session (`session_id` is passed explicitly on every send, never left
- * to freshest-resolution). Your message is plain right-aligned text; the
- * reply reads as formatted Markdown with a quiet line under it (agent · time ·
- * duration, Copy, Retry, Activity) that shows on hover and always on the
- * newest reply. The exact rendered prompt stays one step away in Recent
- * handoffs (Copy prompt). While a message is in flight the thread shows only
- * the thinking state; completion appends the turn in place.
+ * The palette's live chat: a threaded conversation resuming the same session.
  */
 export default function ChatView({
   agent,
@@ -154,16 +123,15 @@ export default function ChatView({
   const sending = sendingText !== null;
   const blocked = !!session?.blocked;
 
-  // Enter the chat with the composer focused; stay pinned to the newest turn.
   useEffect(() => {
     editorRef.current?.focus();
   }, []);
-  // Prefill the composer from captured/dropped context (also on new drops).
+
   useEffect(() => {
     if (draft !== undefined) setText(draft);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftSignal]);
-  // The composer grows with its text (up to the CSS max-height), then scrolls.
+
   useEffect(() => {
     const el = editorRef.current;
     if (!el) return;
@@ -171,7 +139,6 @@ export default function ChatView({
     el.style.height = `${el.scrollHeight}px`;
   }, [text]);
 
-  // Glide to the newest turn (jump when the user prefers reduced motion).
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -223,14 +190,12 @@ export default function ChatView({
           const mine = turn.outcome.capture?.content.text ?? captureSnippet(turn.outcome.capture ?? null);
           const reply = cleanReply(turn.outcome.receipt?.stdout ?? "");
           const ok = turn.outcome.ok;
-          // Each turn reports its OWN measurements — a single global panel
-          // made turn 1 display turn 2's numbers.
-          const activity = turnActivity(turn);
+          const turnAct = turnActivity(turn);
           const latest = i === turns.length - 1 && !sending;
           return (
             <div className={`chat-turn${latest ? " latest" : ""}`} key={i}>
               <div className="chat-row user">
-                <div className="chat-message">
+                <div className="chat-message chat-bubble">
                   <span className="chat-text">{truncate(mine, 8000) || "—"}</span>
                 </div>
               </div>
@@ -300,8 +265,8 @@ export default function ChatView({
                     <Icon name="refresh" size={12} />
                     Retry
                   </button>
-                  {activity && (
-                    <ActivitySection activity={activity} testId={`chat-activity-${i}`} />
+                  {turnAct && (
+                    <ActivitySection activity={turnAct} testId={`chat-activity-${i}`} />
                   )}
                 </div>
               </div>
@@ -312,17 +277,17 @@ export default function ChatView({
         {sending && (
           <div className="chat-turn" data-testid="chat-inflight">
             <div className="chat-row user">
-              <div className="chat-message">
+              <div className="chat-message chat-bubble">
                 <span className="chat-text">{truncate(sendingText ?? "", 8000)}</span>
               </div>
             </div>
             <div className="chat-reply working">
-              {/* Only the thinking state while in flight: streamed text
-                  (progress, thoughts, partial reply) is never shown here.
-                  The finished reply replaces it; the raw stream stays
-                  available in the activity panel. */}
               <span className="chat-thinking" data-testid="chat-thinking">
-                <span className="pixel-loader" aria-hidden="true" />
+                <span className="thinking-dots" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
                 Thinking…
               </span>
               <div className="reply-meta">
@@ -330,8 +295,6 @@ export default function ChatView({
                   <span className="status-dot ok" />
                   {agent.name} is working{elapsed > 0 ? ` · ${elapsed}s` : ""}
                 </span>
-                {/* The in-flight turn owns the live panel; once it completes
-                    the measurements are snapshotted onto the turn itself. */}
                 {activity && <ActivitySection activity={activity} testId="chat-activity" />}
               </div>
             </div>
@@ -350,8 +313,6 @@ export default function ChatView({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            // Enter sends; Shift+Enter is the newline. Cmd/Ctrl+Enter also
-            // sends (matches the `?` cheat sheet) — chat feels like a messenger.
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send();
@@ -365,7 +326,7 @@ export default function ChatView({
           disabled={!text.trim() || sending}
           onClick={send}
         >
-          <Icon name="chevronRight" size={16} />
+          <Icon name="forward" size={14} />
         </button>
       </div>
     </div>

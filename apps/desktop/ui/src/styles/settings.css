@@ -1,13 +1,14 @@
 /* ==========================================================================
-   Handover Settings — same glass language and tokens as palette, native
-   macOS utility feel. SF Pro system font stack via tokens.
+   Handover Settings — macOS Tahoe Liquid Glass System Settings split view
+   Floating translucent sidebar, colorful System Settings squircles, SwiftUI
+   FormStyle.grouped inset containers, unified macOS switches, and Tahoe
+   capsule controls.
    ========================================================================== */
 
 .settings-window {
   height: 100%;
   display: flex;
-  /* Same solid glass-fill as the palette card — no extra see-through. */
-  background: var(--glass-fill);
+  background: var(--settings-main-bg);
   color: var(--text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -21,106 +22,100 @@
 }
 
 /* --------------------------------------------------------------------------
-   Sidebar navigation
+   Sidebar navigation (floating Tahoe glass card on macOS)
    -------------------------------------------------------------------------- */
 .settings-sidebar {
   width: 196px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 0 var(--sp-2) var(--sp-3);
-  /* Same material as the palette card surface. */
-  background: var(--glass-fill);
-  border-right: 1px solid var(--border);
-  box-shadow: inset -1px 0 0 0 var(--glass-rim-inner);
-  border-radius: var(--r-2xl) 0 0 var(--r-2xl);
+  padding: 0 10px 12px;
+  background: var(--settings-sidebar-bg);
+  border-right: 0.5px solid var(--sep);
 }
 
-/* The Overlay title bar (see Rust `settings_window_builder`) draws the
-   native traffic lights over this strip — so the brand row is exactly the
-   52px title-bar height, cleared ~78px for the lights, and doubles as the
-   window drag region. This is the macOS pattern of chrome-as-part-of-the-UI. */
-.settings-brand {
+/* 52px top drag strip aligns cleanly with native macOS traffic lights */
+.settings-traffic-strip {
+  height: 52px;
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  height: 52px;
-  padding: 0 var(--sp-2) 0 78px;
   flex-shrink: 0;
-  /* Dragging is driven by the `data-tauri-drag-region` attribute (Tauri v2
-     ignores the old `-webkit-app-region` property); the cursor just says
-     it's grabbable. */
-  cursor: grab;
-  color: var(--text);
 }
 
-.settings-brand:active {
-  cursor: grabbing;
-}
-
-/* No traffic lights off macOS — the clearance becomes plain padding. */
-html:not(.is-mac) .settings-brand {
-  padding-left: var(--sp-2);
-}
-
-.settings-brand .brand-title {
+.settings-brand-fallback {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding-left: 6px;
   font-size: 13px;
   font-weight: 600;
-  font-family: var(--font-sans);
-  letter-spacing: 0.1px;
+  color: var(--text);
 }
 
-.settings-brand .handover-mark {
-  display: block;
-  color: var(--text);
+html:not(.is-mac) .settings-brand-fallback {
+  display: inline-flex;
+}
+
+.settings-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .settings-nav {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: 9px;
   text-align: left;
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--r-control);
-  padding: 8px 12px;
-  color: var(--text-secondary);
+  border: 0.5px solid transparent;
+  border-radius: var(--r-row);
+  padding: 6px 8px;
+  color: var(--text);
   font-family: var(--font-sans);
   font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
+  font-weight: 400;
+  cursor: default;
   transition: background var(--dur-fast) var(--ease),
-    color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease);
+    border-color var(--dur-fast) var(--ease);
 }
 
-.settings-nav svg {
-  color: var(--text-tertiary);
-  transition: color var(--dur-fast) var(--ease);
+.settings-nav:hover:not(.active) {
+  background: var(--hover-fill);
 }
 
-.settings-nav:hover {
-  background: var(--pill-fill);
-  color: var(--text);
-}
-
-/* Active tab: soft pill, accent icon (glass language, no hard rail). */
 .settings-nav.active {
-  background: var(--pill-fill-strong);
-  color: var(--text);
-  border-color: var(--border);
-  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
-  font-weight: 600;
+  background: var(--sel-bg);
+  border-color: var(--sel-border);
+  box-shadow: var(--glass-rim-subtle), 0 1px 4px rgba(0, 0, 0, 0.08);
+  font-weight: 500;
 }
 
-.settings-nav.active svg {
-  color: var(--accent);
-  filter: drop-shadow(0 0 3px var(--accent-glow));
+/* macOS System Settings squircle icon badges */
+.sq-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.16);
 }
 
-.settings-sidebar-spacer {
-  flex: 1;
+.sq-gen {
+  background: linear-gradient(180deg, #98989d 0%, #6e6e73 100%);
+}
+.sq-agt {
+  background: linear-gradient(180deg, #329bff 0%, #007aff 100%);
+}
+.sq-prv {
+  background: linear-gradient(180deg, #38d462 0%, #24b44b 100%);
+}
+.sq-abt {
+  background: linear-gradient(180deg, #6e6e73 0%, #48484a 100%);
 }
 
 /* --------------------------------------------------------------------------
@@ -131,38 +126,28 @@ html:not(.is-mac) .settings-brand {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  /* Same fill as sidebar / palette card so opacity matches the app shell. */
-  background: var(--glass-fill);
-  font-family: var(--font-sans);
+  background: transparent;
 }
 
 .settings-head {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-5) var(--sp-5) var(--sp-3);
-  border-bottom: 1px solid var(--border);
-  cursor: grab;
-  animation: step-in var(--dur) var(--ease-out);
+  gap: 10px;
+  height: 52px;
+  padding: 0 22px;
+  flex-shrink: 0;
 }
 
-.settings-head:active {
-  cursor: grabbing;
+.settings-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
 }
 
 .settings-sub {
-  font-size: 11.5px;
-  color: var(--text-secondary);
-  font-family: var(--font-sans);
-}
-
-/* Page intro (no duplicate tab title / blue underline). */
-.settings-sub-lead {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  letter-spacing: 0.1px;
-  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-tertiary);
 }
 
 .settings-body {
@@ -170,245 +155,321 @@ html:not(.is-mac) .settings-brand {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
-  padding: var(--sp-1) var(--sp-5) var(--sp-5);
+  gap: 14px;
+  padding: 10px 22px 22px;
   max-width: 720px;
-  /* Tabs enter with the palette's quiet step transition. */
   animation: step-in var(--dur) var(--ease-out);
 }
 
-/* Section labels match the palette's group headers: small mono caps. */
 .settings-section {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  margin-top: var(--sp-3);
-  padding-bottom: 2px;
-  font-weight: 500;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 4px 0 0 4px;
+  margin-bottom: -6px;
 }
 
 .settings-section:first-child {
-  margin-top: 0;
+  padding-top: 0;
 }
 
 .settings-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--sp-2);
-  padding-top: var(--sp-1);
+  padding-top: 2px;
 }
 
 /* --------------------------------------------------------------------------
-   Rows + controls
+   Grouped inset list containers (SwiftUI FormStyle.grouped)
    -------------------------------------------------------------------------- */
-.info-row {
+.settings-group {
+  background: var(--group-bg);
+  border: 0.5px solid var(--sep);
+  border-radius: var(--r-group);
+  box-shadow: var(--glass-rim-subtle);
+  overflow: visible;
+}
+
+.g-row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4);
-  background: var(--pill-fill);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
-  transition: background var(--dur-fast) var(--ease),
-    border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
-}
-.info-row:active {
-  transform: translateY(0.5px);
+  padding: 11px 14px;
 }
 
-.info-row:hover {
-  background: var(--pill-fill-strong);
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-1), inset 0 1px 0 0 var(--glass-rim-inner);
+.g-row + .g-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 0;
+  height: 0.5px;
+  background: var(--sep);
 }
 
-.info-row.col {
+.g-row.col {
   flex-direction: column;
   align-items: stretch;
 }
 
 .info-label {
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 400;
   color: var(--text);
-  font-family: var(--font-sans);
 }
 
 .info-desc {
   font-size: 11px;
-  color: var(--text-tertiary);
-  line-height: 1.5;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  margin-top: 1px;
+}
+
+.trust-cue {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.trust-cue svg {
+  color: var(--success);
+  flex-shrink: 0;
   margin-top: 2px;
 }
 
-.info-value {
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  word-break: break-word;
+.trust-cue strong {
+  color: var(--text);
+  font-weight: 600;
 }
 
-.info-value code {
-  font-size: 11.5px;
-}
-
-/* Segmented control (appearance) — pill track */
+/* --------------------------------------------------------------------------
+   Tahoe capsule Segmented Control
+   -------------------------------------------------------------------------- */
 .segmented {
   display: inline-flex;
   gap: 2px;
-  padding: 3px;
-  align-self: flex-start;
-  background: var(--pill-fill);
-  border: 1px solid var(--border);
-  border-radius: var(--r-control);
+  padding: 2.5px;
+  background: var(--recessed);
+  border: 0.5px solid var(--sep);
+  border-radius: var(--r-pill);
+  flex-shrink: 0;
 }
 
 .seg-btn {
-  border: 1px solid transparent;
+  border: none;
   background: transparent;
   color: var(--text-secondary);
   font-family: var(--font-sans);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
-  padding: 5px 14px;
-  border-radius: var(--r-control);
-  cursor: pointer;
+  padding: 4px 11px;
+  border-radius: var(--r-pill);
+  cursor: default;
   transition: background var(--dur-fast) var(--ease),
-    color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease);
+    color var(--dur-fast) var(--ease);
 }
 
-.seg-btn:hover {
+.seg-btn:hover:not(.active) {
   color: var(--text);
-}
-
-.seg-btn:active {
-  transform: translateY(0.5px);
 }
 
 .seg-btn.active {
-  background: var(--pill-fill-strong);
-  border-color: var(--border);
+  background: var(--seg-thumb);
   color: var(--text);
-  font-weight: 600;
-  box-shadow: var(--shadow-1), inset 0 1px 0 0 var(--glass-rim-inner);
+  box-shadow: var(--seg-shadow);
 }
 
-/* Opacity slider (Appearance) — shared palette + Settings surface alpha. */
-.opacity-row-head {
+/* --------------------------------------------------------------------------
+   Tahoe Pill-Thumb Opacity Slider
+   -------------------------------------------------------------------------- */
+.opacity-control {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  width: 100%;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .opacity-value {
-  flex-shrink: 0;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
-  min-width: 3.2em;
+  min-width: 3em;
   text-align: right;
 }
 
 .opacity-slider {
-  width: 100%;
-  margin-top: 2px;
+  --slider-pct: 100%;
+  width: 144px;
   -webkit-appearance: none;
   appearance: none;
-  height: 6px;
+  height: 4px;
   border-radius: var(--r-pill);
-  background: var(--surface-3);
-  border: 1px solid var(--border);
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--slider-pct),
+    var(--recessed) var(--slider-pct),
+    var(--recessed) 100%
+  );
   outline: none;
-  cursor: pointer;
+  cursor: default;
 }
 
 .opacity-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--circle-btn);
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-1);
-  cursor: pointer;
+  width: 22px;
+  height: 14px;
+  border-radius: var(--r-pill);
+  background: #ffffff;
+  border: 0.5px solid rgba(0, 0, 0, 0.16);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  cursor: default;
 }
 
 .opacity-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--circle-btn);
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-1);
-  cursor: pointer;
+  width: 22px;
+  height: 14px;
+  border-radius: var(--r-pill);
+  background: #ffffff;
+  border: 0.5px solid rgba(0, 0, 0, 0.16);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  cursor: default;
 }
 
-.opacity-slider:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-
-/* Toggle (native-style switch) */
+/* --------------------------------------------------------------------------
+   Unified macOS Switch (used in BOTH General & Agents)
+   -------------------------------------------------------------------------- */
 .switch {
   position: relative;
-  width: 38px;
-  height: 22px;
+  width: 36px;
+  height: 20px;
   flex-shrink: 0;
-  border-radius: 11px;
-  background: var(--surface-3);
-  border: 1px solid var(--border);
-  cursor: pointer;
-  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
-    box-shadow var(--dur-fast) var(--ease);
+  border-radius: var(--r-pill);
+  background: var(--recessed);
+  border: 0.5px solid var(--sep);
+  cursor: default;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
   appearance: none;
   -webkit-appearance: none;
-}
-
-.switch:hover {
-  border-color: var(--border-strong);
-  box-shadow: 0 0 0 3px var(--surface-3);
 }
 
 .switch::after {
   content: "";
   position: absolute;
-  top: 2px;
+  top: 1.5px;
   left: 2px;
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: var(--shadow-1);
+  background: #ffffff;
+  box-shadow: 0 1px 2.5px rgba(0, 0, 0, 0.28);
   transition: transform var(--dur) var(--ease-out);
 }
 
 .switch:checked {
   background: var(--accent);
-  border-color: var(--accent);
+  border-color: transparent;
 }
 
 .switch:checked::after {
-  background: var(--accent-fg);
-  transform: translateX(16px);
+  transform: translateX(15px);
 }
 
-.switch:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.switch.busy,
+.switch:disabled {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
-/* Fields */
+/* Styled native checkbox */
+.mac-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 4.5px;
+  border: 0.5px solid var(--border-strong);
+  background: var(--recessed);
+  display: inline-grid;
+  place-content: center;
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.mac-checkbox:checked {
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.mac-checkbox:checked::before {
+  content: "";
+  width: 8px;
+  height: 5px;
+  border-left: 1.8px solid #ffffff;
+  border-bottom: 1.8px solid #ffffff;
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+/* --------------------------------------------------------------------------
+   Shortcut recorder + cheat sheet
+   -------------------------------------------------------------------------- */
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shortcut-display {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--recessed);
+  border: 0.5px solid var(--sep);
+  border-radius: var(--r-xs);
+  padding: 4px 9px;
+}
+
+.shortcut-record {
+  font-size: 12px;
+  color: var(--accent);
+  padding: 4px 10px;
+  background: var(--accent-softer);
+  border: 1px dashed var(--accent);
+  border-radius: var(--r-xs);
+}
+
+.shortcut-grid-row {
+  padding: 9px 14px;
+}
+
+.shortcut-grid-action {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.shortcut-grid-keys {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.shortcut-grid-keys kbd {
+  min-width: 22px;
+  text-align: center;
+}
+
+/* --------------------------------------------------------------------------
+   Fields & forms
+   -------------------------------------------------------------------------- */
 .field {
   display: flex;
   flex-direction: column;
@@ -416,329 +477,105 @@ html:not(.is-mac) .settings-brand {
 }
 
 .field-label {
-  font-size: 11px;
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--text-secondary);
-  letter-spacing: 0.2px;
 }
 
 .field-hint {
-  opacity: 0.7;
-  font-size: 10px;
+  opacity: 0.72;
+  font-size: 10.5px;
+  font-weight: 400;
 }
 
 .field input[type="text"],
 .field input:not([type]),
 .field input[type="password"],
 .field textarea {
-  padding: 10px 14px;
-  background: var(--pill-fill);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  padding: 7px 11px;
+  background: var(--recessed);
+  border: 0.5px solid var(--sep);
+  border-radius: var(--r-sm);
   color: var(--text);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 12.5px;
   outline: none;
+  user-select: text;
   transition: border-color var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
-}
-
-.field input:hover,
-.field textarea:hover {
-  border-color: var(--border-strong);
+    box-shadow var(--dur-fast) var(--ease);
 }
 
 .field input:focus,
 .field textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-  background: var(--pill-fill-strong);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .field input::placeholder,
 .field textarea::placeholder {
   color: var(--text-tertiary);
-  opacity: 0.7;
 }
 
 .field textarea {
   resize: vertical;
-  min-height: 120px;
+  min-height: 110px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 1.5;
-  user-select: text;
 }
 
 .field.check {
   flex-direction: row;
   align-items: center;
-  gap: var(--sp-2);
-  font-size: 13px;
+  gap: 8px;
+  font-size: 12.5px;
   color: var(--text);
-  cursor: pointer;
   padding: 2px 0;
 }
 
-.field.check input[type="checkbox"] {
-  accent-color: var(--accent);
-  width: 15px;
-  height: 15px;
-  cursor: pointer;
+.agent-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.form-card {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .form-body {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
+  gap: 10px;
 }
 
 .manage-error {
   padding: 8px 12px;
   border-radius: var(--r-sm);
   background: var(--error-soft);
-  border: 1px solid rgba(255, 107, 107, 0.35);
+  border: 0.5px solid rgba(255, 69, 58, 0.35);
   color: var(--error);
   font-size: 12px;
   line-height: 1.45;
   word-break: break-word;
 }
 
-/* Shortcut recorder */
-.shortcut-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-
-.shortcut-display {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  background: var(--pill-fill);
-  border: 1px solid var(--border);
-  border-radius: var(--r-control);
-  padding: 5px 11px;
-  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
-}
-
-.shortcut-record {
-  font-size: 12px;
-  color: var(--text-secondary);
-  padding: 5px 11px;
-  background: var(--accent-softer);
-  border: 1px dashed var(--accent-glow);
-  border-radius: var(--r-sm);
-}
-
-/* Keyboard cheat sheet (General → Keyboard shortcuts) */
-.shortcut-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.shortcut-grid-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: 8px 14px;
-  background: var(--pill-fill);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
-  transition: background var(--dur-fast) var(--ease),
-    border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
-}
-
-.shortcut-grid-row:hover {
-  background: var(--pill-fill-strong);
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-1), inset 0 1px 0 0 var(--glass-rim-inner);
-}
-
-.shortcut-grid-keys {
-  display: inline-flex;
-  gap: 4px;
-  min-width: 88px;
-  justify-content: flex-end;
-}
-
-.shortcut-grid-keys kbd {
-  min-width: 24px;
-  text-align: center;
-}
-
-.shortcut-grid-action {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
 /* --------------------------------------------------------------------------
-   Agent gallery + configured list
+   Agents grouped list + native NSMenu overflow popover
    -------------------------------------------------------------------------- */
-.gallery-card {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4);
-  background: var(--pill-fill);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
-  transition: border-color var(--dur-fast) var(--ease),
-    background var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
-}
-.gallery-card:active {
-  transform: translateY(0.5px);
-}
-
-.gallery-card:hover {
-  border-color: var(--border-strong);
-  background: var(--pill-fill-strong);
-  box-shadow: var(--shadow-1), inset 0 1px 0 0 var(--glass-rim-inner);
-}
-
-.gallery-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
+.agent-card {
   flex-direction: column;
-  gap: 3px;
-}
-
-.gallery-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13.5px;
-  font-weight: 600;
-}
-
-.gallery-desc {
-  font-size: 11.5px;
-  color: var(--text-secondary);
-}
-
-.gallery-cmd {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.gallery-cmd code {
-  font-size: 10.5px;
-}
-
-.gallery-actions {
-  flex-shrink: 0;
-}
-
-.configure-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-3);
-  background: var(--accent-softer);
-  border: 1px solid var(--accent-glow);
-  border-radius: var(--r-md);
-  animation: step-in var(--dur) var(--ease-out);
-}
-
-.configure-hint {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-secondary);
-}
-
-.configure-row {
-  display: flex;
-  gap: var(--sp-2);
-}
-
-.configure-row input {
-  flex: 1;
-  min-width: 0;
-  padding: 9px 12px;
-  background: var(--pill-fill-strong);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  color: var(--text);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  outline: none;
-}
-
-.configure-row input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.manage-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: 10px 12px;
-  border-radius: var(--r-lg);
-  background: var(--pill-fill);
-  border: 1px solid var(--border);
-  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
-  transition: border-color var(--dur-fast) var(--ease),
-    background var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
-}
-
-.manage-row:hover {
-  border-color: var(--border-strong);
-  background: var(--pill-fill-strong);
-  box-shadow: var(--shadow-1), inset 0 1px 0 0 var(--glass-rim-inner);
-}
-
-.manage-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  flex-shrink: 0;
-}
-
-/* --------------------------------------------------------------------------
-   Unified agent list — one adaptive card per assistant.
-   -------------------------------------------------------------------------- */
-.agent-list {
-  display: flex;
-  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
 }
 
-.agent-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  padding: 10px 12px;
-  border-radius: var(--r-lg);
-  background: var(--pill-fill);
-  border: 1px solid var(--border);
-  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
-  transition: border-color var(--dur-fast) var(--ease),
-    background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
-}
-
-.agent-card:hover {
-  border-color: var(--border-strong);
-  background: var(--pill-fill-strong);
-}
-
-/* Hidden-from-palette and demo cards rest quieter. */
 .agent-card.off,
 .agent-card.demo {
-  background: transparent;
-}
-
-.agent-card.demo {
-  border-style: dashed;
-  opacity: 0.75;
+  opacity: 0.76;
 }
 
 .agent-row {
@@ -755,10 +592,10 @@ html:not(.is-mac) .settings-brand {
   width: 28px;
   height: 28px;
   flex-shrink: 0;
-  border-radius: var(--r-tile, 9px);
-  background: var(--pill-fill);
-  border: 1px solid var(--border);
-  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
+  border-radius: var(--r-tile);
+  background: var(--control-bg);
+  border: 0.5px solid var(--sep);
+  overflow: hidden;
 }
 
 .agent-main {
@@ -773,14 +610,14 @@ html:not(.is-mac) .settings-brand {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text);
 }
 
 .agent-status {
   font-size: 11px;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 .agent-sessions {
@@ -788,13 +625,13 @@ html:not(.is-mac) .settings-brand {
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 .agent-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -802,32 +639,27 @@ html:not(.is-mac) .settings-brand {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--r-control);
-  border: 1px solid transparent;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-pill);
+  border: none;
   background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease),
-    color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  color: var(--text-secondary);
+  cursor: default;
 }
 
 .menu-btn:hover,
 .menu-btn[aria-expanded="true"] {
   background: var(--hover-fill);
   color: var(--text);
-  border-color: var(--border);
 }
 
-/* Expanded command details (View command). */
 .cmd-details {
-  margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid var(--border);
+  border-top: 0.5px solid var(--sep);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .cmd-details code {
@@ -840,7 +672,45 @@ html:not(.is-mac) .settings-brand {
   align-self: flex-start;
 }
 
-/* ⋯ overflow menu + click-away backdrop. */
+.configure-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--accent-softer);
+  border: 0.5px solid var(--accent-soft);
+  border-radius: var(--r-row);
+}
+
+.configure-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.configure-row {
+  display: flex;
+  gap: 6px;
+}
+
+.configure-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 10px;
+  background: var(--control-bg);
+  border: 0.5px solid var(--sep);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-size: 12.5px;
+  outline: none;
+}
+
+.configure-row input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* Native NSMenu-style popover */
 .menu-backdrop {
   position: fixed;
   inset: 0;
@@ -850,16 +720,19 @@ html:not(.is-mac) .settings-brand {
 .menu-pop {
   position: absolute;
   top: calc(100% - 4px);
-  right: 10px;
+  right: 12px;
   z-index: 41;
-  min-width: 168px;
+  min-width: 172px;
   display: flex;
   flex-direction: column;
+  gap: 1px;
   padding: 4px;
-  background: var(--surface-solid, var(--bg-elevated));
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-2);
+  background: var(--popover-bg);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 0.5px solid var(--border);
+  border-radius: var(--r-row);
+  box-shadow: var(--shadow-2), var(--glass-rim-subtle);
   animation: step-in var(--dur-fast) var(--ease-out);
 }
 
@@ -868,122 +741,45 @@ html:not(.is-mac) .settings-brand {
   align-items: center;
   gap: 7px;
   width: 100%;
-  padding: 6px 8px;
+  padding: 5px 9px;
   border: none;
-  border-radius: var(--r-sm, 7px);
+  border-radius: var(--r-sm);
   background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
+  color: var(--text);
+  font-size: 12.5px;
   text-align: left;
-  cursor: pointer;
+  cursor: default;
 }
 
 .menu-pop button:hover:not(:disabled) {
-  background: var(--hover-fill);
-  color: var(--text);
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 
 .menu-pop button.danger {
   color: var(--error);
 }
 
+.menu-pop button.danger:hover:not(:disabled) {
+  background: var(--error);
+  color: #ffffff;
+}
+
 .menu-pop button.danger.armed {
-  background: var(--error-soft);
+  background: var(--error);
+  color: #ffffff;
+}
+
+.menu-sep {
+  height: 0.5px;
+  background: var(--sep);
+  margin: 3px 6px;
 }
 
 .menu-note {
-  padding: 6px 8px;
+  padding: 5px 9px;
   font-size: 11px;
   color: var(--text-tertiary);
-}
-
-/* Visibility switch (palette on/off) — compact macOS-style toggle.
-   The checkbox is visually hidden but keeps native a11y/focus behavior. */
-.toggle {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  margin-right: var(--sp-1);
-  cursor: pointer;
-}
-
-.toggle input {
-  position: absolute;
-  opacity: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  cursor: pointer;
-}
-
-.toggle-track {
-  width: 30px;
-  height: 18px;
-  border-radius: 9px;
-  background: var(--surface-3);
-  border: 1px solid var(--border);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);
-  transition: background var(--dur-fast) var(--ease),
-    border-color var(--dur-fast) var(--ease);
-  pointer-events: none;
-}
-
-.toggle-track::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-  transition: transform var(--dur-fast) var(--ease);
-}
-
-.toggle input:checked + .toggle-track {
-  background: var(--accent);
-  border-color: transparent;
-}
-
-.toggle input:checked + .toggle-track::after {
-  background: var(--accent-fg);
-  transform: translateX(12px);
-}
-
-.toggle input:focus-visible + .toggle-track {
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.toggle.busy {
-  opacity: 0.55;
-  pointer-events: none;
-}
-
-.manage-row .row-sub code {
-  font-size: 11px;
-}
-
-/* Session-aware agent rows: discovery + resume command line, and the
-   "Detect session" result chips. */
-.manage-row .session-sub {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--text-tertiary);
-  font-size: 11px;
-  margin-top: 2px;
-}
-
-.manage-row .session-sub code {
-  color: var(--text-secondary);
-}
-
-.manage-row .session-detected {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 2px;
 }
 
 /* --------------------------------------------------------------------------
@@ -992,20 +788,18 @@ html:not(.is-mac) .settings-brand {
 .about-body {
   align-items: center;
   text-align: center;
-  gap: var(--sp-2);
+  gap: 10px;
 }
 
 .about-logo {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 60px;
-  height: 60px;
+  width: 56px;
+  height: 56px;
   border-radius: 14px;
   overflow: hidden;
-  background: transparent;
-  border: none;
-  margin-top: var(--sp-2);
+  margin-top: 4px;
   box-shadow: var(--shadow-1);
 }
 
@@ -1016,51 +810,67 @@ html:not(.is-mac) .settings-brand {
 }
 
 .about-title {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: 0.1px;
-  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
 
 .about-version {
   font-size: 12px;
   color: var(--text-secondary);
+  margin-top: -6px;
 }
 
 .about-blurb {
   font-size: 12.5px;
-  line-height: 1.6;
+  line-height: 1.55;
   color: var(--text-secondary);
   max-width: 420px;
+  margin-bottom: 4px;
 }
 
-.about-body .info-row {
+.about-body .g-row {
+  text-align: left;
+}
+
+.about-diagnostics {
   width: 100%;
   text-align: left;
+}
+
+.about-diagnostics summary {
+  cursor: default;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  padding: 4px 4px;
+}
+
+.about-diagnostics summary:hover {
+  color: var(--text);
+}
+
+.diagnostics-box {
+  width: 100%;
+  max-height: 160px;
+  overflow-y: auto;
+  text-align: left;
+  background: var(--group-bg);
+  border: 0.5px solid var(--sep);
+  border-radius: var(--r-group);
+  padding: var(--sp-3);
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  user-select: text;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .about-license {
   font-size: 11px;
   color: var(--text-tertiary);
-  margin-top: var(--sp-2);
-}
-
-.diagnostics-box {
-  width: 100%;
-  max-width: 480px;
-  max-height: 180px;
-  overflow-y: auto;
-  text-align: left;
-  background: var(--pill-fill);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  padding: var(--sp-3);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  user-select: text;
-  white-space: pre-wrap;
-  word-break: break-word;
-  box-shadow: inset 0 1px 0 0 var(--glass-rim-inner);
+  margin-top: 4px;
 }

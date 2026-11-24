@@ -25,11 +25,11 @@ import AboutSection from "./settings/AboutSection";
 import GeneralSection from "./settings/GeneralSection";
 import PrivacySection from "./settings/PrivacySection";
 
-const TABS: { id: SettingsTab; label: string; icon: string }[] = [
-  { id: "general", label: "General", icon: "settings" },
-  { id: "agents", label: "Agents", icon: "agentLocal" },
-  { id: "privacy", label: "Privacy", icon: "shield" },
-  { id: "about", label: "About", icon: "info" },
+const TABS: { id: SettingsTab; label: string; icon: string; sq: string }[] = [
+  { id: "general", label: "General", icon: "settings", sq: "sq-gen" },
+  { id: "agents", label: "Agents", icon: "agentLocal", sq: "sq-agt" },
+  { id: "privacy", label: "Privacy", icon: "shield", sq: "sq-prv" },
+  { id: "about", label: "About", icon: "info", sq: "sq-abt" },
 ];
 
 export default function SettingsApp() {
@@ -42,16 +42,13 @@ export default function SettingsApp() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [form, setForm] = useState<AgentForm>(EMPTY_AGENT_FORM);
   const [saving, setSaving] = useState(false);
-  /** Live sessions per agent, from the last "Detect session" click. */
   const [detectedSessions, setDetectedSessions] = useState<Map<string, LiveSession[]>>(
     () => new Map()
   );
   const [detectingId, setDetectingId] = useState<string | null>(null);
   const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
-  /** Agent id whose visibility toggle is in flight (optimistic UI). */
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  /** Excluded paths mirrored from the last save (PrivacySection owns the draft). */
   const [excludedPaths, setExcludedPaths] = useState<string[]>([]);
 
   const reload = useCallback(async () => {
@@ -75,34 +72,26 @@ export default function SettingsApp() {
     void reload();
   }, [reload]);
 
-  /** Guard against unknown/raced tab payloads (renders the General tab). */
   const applyTab = useCallback((raw: unknown) => {
     if (TABS.some((t) => t.id === raw)) setTab(raw as SettingsTab);
   }, []);
 
-  // The app menu / tray can request a specific tab ("About Handover" → about).
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     listen("settings:tab", (e) => applyTab(e.payload)).then((fn) => {
       unlisten = fn;
     });
-    // Robust fallback: if the emit raced window load, pick up the pending tab.
     void takeSettingsTab().then(applyTab);
     return () => {
       unlisten?.();
     };
   }, [applyTab]);
 
-  // A Remove button armed for confirmation reverts after 3s.
   useEffect(() => {
     if (!confirmingRemove) return;
     const t = window.setTimeout(() => setConfirmingRemove(null), 3000);
     return () => window.clearTimeout(t);
   }, [confirmingRemove]);
-
-  // -------------------------------------------------------------------------
-  // Agent actions
-  // -------------------------------------------------------------------------
 
   const addFromGallery = useCallback(
     async (a: GalleryAgent) => {
@@ -150,8 +139,6 @@ export default function SettingsApp() {
     [reload]
   );
 
-  /** Visibility switch: ON = shown in the palette dropdown. Optimistic —
-   *  the row flips instantly, then we confirm with the daemon. */
   const toggleEnabled = useCallback(
     async (id: string, enabled: boolean) => {
       setAgents((list) =>
@@ -163,7 +150,6 @@ export default function SettingsApp() {
         await setAgentEnabled(id, enabled);
         await reload();
       } catch (e) {
-        // Roll the optimistic flip back on failure.
         setAgents((list) =>
           list.map((a) => (a.id === id ? { ...a, enabled: !enabled } : a))
         );
@@ -192,8 +178,6 @@ export default function SettingsApp() {
     [confirmingRemove, reload]
   );
 
-  /** "Detect session": scan the agent's live sessions on demand (filenames
-   *  + mtimes only — the discovery privacy rule) and show them inline. */
   const detectSession = useCallback(async (id: string) => {
     setDetectingId(id);
     setError("");
@@ -260,34 +244,38 @@ export default function SettingsApp() {
   return (
     <div className="settings-window">
       <nav className="settings-sidebar" aria-label="Settings">
-        {/* The Overlay title bar puts the traffic lights over this strip —
-            it doubles as the window drag region (see settings.css). */}
-        <div className="settings-brand" data-tauri-drag-region>
-          <span className="logo" data-tauri-drag-region>
-            <HandoverMark size={18} />
-          </span>
-          <span className="brand-title" data-tauri-drag-region>
-            Handover
+        <div className="settings-traffic-strip" data-tauri-drag-region>
+          <span className="settings-brand-fallback" data-tauri-drag-region>
+            <HandoverMark size={15} />
+            <span>Handover</span>
           </span>
         </div>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            className={`settings-nav${tab === t.id ? " active" : ""}`}
-            onClick={() => setTab(t.id)}
-            aria-current={tab === t.id ? "page" : undefined}
-          >
-            <Icon name={t.icon} size={15} />
-            {t.label}
-          </button>
-        ))}
+        <div className="settings-nav-list">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`settings-nav${tab === t.id ? " active" : ""}`}
+              onClick={() => setTab(t.id)}
+              aria-current={tab === t.id ? "page" : undefined}
+            >
+              <span className={`sq-icon ${t.sq}`} aria-hidden="true">
+                <Icon name={t.icon} size={12} />
+              </span>
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </div>
       </nav>
 
       <main className="settings-main">
         {tab === "general" && info && (
           <>
             <div className="settings-head" data-tauri-drag-region>
-              <span className="settings-sub settings-sub-lead" data-tauri-drag-region>
+              <h1 className="settings-title" data-tauri-drag-region>
+                General
+              </h1>
+              <span className="settings-sub" data-tauri-drag-region>
                 How Handover behaves
               </span>
             </div>
@@ -305,7 +293,10 @@ export default function SettingsApp() {
         {tab === "agents" && (
           <>
             <div className="settings-head" data-tauri-drag-region>
-              <span className="settings-sub settings-sub-lead" data-tauri-drag-region>
+              <h1 className="settings-title" data-tauri-drag-region>
+                Agents
+              </h1>
+              <span className="settings-sub" data-tauri-drag-region>
                 {agents.length} configured · {agents.filter((a) => a.enabled).length} in palette
               </span>
             </div>
@@ -345,7 +336,10 @@ export default function SettingsApp() {
         {tab === "privacy" && (
           <>
             <div className="settings-head" data-tauri-drag-region>
-              <span className="settings-sub settings-sub-lead" data-tauri-drag-region>
+              <h1 className="settings-title" data-tauri-drag-region>
+                Privacy
+              </h1>
+              <span className="settings-sub" data-tauri-drag-region>
                 Local-first, by design
               </span>
             </div>
@@ -361,7 +355,14 @@ export default function SettingsApp() {
         )}
 
         {tab === "about" && info && (
-          <AboutSection info={info} agents={agents} onError={setError} />
+          <>
+            <div className="settings-head" data-tauri-drag-region>
+              <h1 className="settings-title" data-tauri-drag-region>
+                About
+              </h1>
+            </div>
+            <AboutSection info={info} agents={agents} onError={setError} />
+          </>
         )}
       </main>
     </div>

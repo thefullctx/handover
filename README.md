@@ -37,14 +37,15 @@ The target is 2–3 keystrokes from seeing a problem to a successful handoff.
 2. Press the global hotkey (`⌘⇧A` / `Super+Shift+A`). The palette opens with a clean
    composer; the clipboard is never read.
 3. Optionally, drop a file or text onto the palette to pre-fill your message.
-4. Pick an agent. Agents on your machine are grouped **Running now** and **Available**,
-   each with a status light: **green** when its process is actually running, **red** when
-   installed but idle, **amber** when its model provider is unreachable.
-5. The chat opens beneath the picker, resuming the agent's live session when it has one.
-   `Enter` sends your message verbatim.
+4. Pick an agent from the always-unfolded palette (or type to filter). Agents
+   on your machine are grouped **Running now** and **Available**, each with a
+   status dot: **green** when its process is actually running, **neutral gray**
+   when installed idle, and **amber** when its model provider is unreachable.
+5. The chat opens right inside the palette, resuming the agent's live session
+   when it has one. `Enter` sends your message verbatim.
 6. A thinking animation shows while the agent works, then its reply lands in the
    thread. After the first time it's
-   `⌘⇧A → Enter → Enter`.
+   `⌘⇧A → Enter`.
 
 Everything runs locally. Nothing is uploaded anywhere unless the agent you choose does so.
 

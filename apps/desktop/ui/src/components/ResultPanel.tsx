@@ -1,5 +1,6 @@
 import { Icon } from "../Icons";
 import { cleanReply, failureMessage, fmtDuration, outcomeTitle, truncate } from "../lib/format";
+import { Markdown } from "../lib/markdown";
 import type { SendOutcome } from "../lib/types";
 import { DetailChevron } from "./ui";
 
@@ -16,10 +17,8 @@ interface Props {
 }
 
 /**
- * A completed handoff reads as a resolved loop: a human outcome title first
- * ("Fix analysis completed"), then the answer as readable text. Raw stdout,
- * stderr and the prompt stay in expandable details. Errors are plain-language
- * with Retry — never raw stack traces.
+ * A completed handoff reads as a resolved loop: a human outcome title first,
+ * then the answer rendered as formatted Markdown.
  */
 export default function ResultPanel({
   outcome,
@@ -57,7 +56,9 @@ export default function ResultPanel({
       {ok ? (
         <div className="answer-box">
           {stdout ? (
-            <pre className="answer-text">{truncate(stdout, 8000)}</pre>
+            <div className="chat-md">
+              <Markdown text={truncate(stdout, 8000)} />
+            </div>
           ) : (
             <p className="answer-empty">The agent finished without returning text output.</p>
           )}

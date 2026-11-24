@@ -9,10 +9,8 @@ interface Props {
 }
 
 /**
- * Privacy — the local-first promise, made concrete:
- * an editable excluded-paths list (enforced before any file is read),
- * a plain-language explanation of how context is handled, and history
- * controls. History is session-only (in memory) and says so plainly.
+ * Privacy — grouped inset rows for excluded paths, local-first guarantee,
+ * and memory-only history clearing.
  */
 export default function PrivacySection({ excludedPaths, onExcludedPathsChange, onError }: Props) {
   const [draft, setDraft] = useState(excludedPaths.join("\n"));
@@ -20,8 +18,6 @@ export default function PrivacySection({ excludedPaths, onExcludedPathsChange, o
   const [saving, setSaving] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
 
-  // Seed the editor once the real config arrives (async app_info) — unless
-  // the user already started editing.
   useEffect(() => {
     if (!dirty) setDraft(excludedPaths.join("\n"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -56,65 +52,75 @@ export default function PrivacySection({ excludedPaths, onExcludedPathsChange, o
   return (
     <>
       <div className="settings-section">Excluded paths</div>
-      <div className="info-row col">
-        <div>
-          <div className="info-label">Never attach these paths</div>
-          <div className="info-desc">
-            Files matching these patterns are refused <strong>before being read</strong> —{" "}
-            <code>.env</code>, <code>*.pem</code>, <code>~/.ssh/*</code> and anything you add.
-            One pattern per line.
+      <div className="settings-group">
+        <div className="g-row col">
+          <div>
+            <div className="info-label">Never attach these paths</div>
+            <div className="info-desc">
+              Files matching these patterns are refused <strong>before being read</strong> —{" "}
+              <code>.env</code>, <code>*.pem</code>, <code>~/.ssh/*</code> and anything you add.
+              One pattern per line.
+            </div>
           </div>
-        </div>
-        <label className="field">
-          <span className="field-label" style={{ display: "none" }}>
-            Excluded paths
-          </span>
-          <textarea
-            value={draft}
-            onChange={(e) => {
-              setDraft(e.target.value);
-              setDirty(true);
-            }}
-            spellCheck={false}
-            aria-label="Excluded paths (one per line)"
-            data-testid="excluded-paths"
-          />
-        </label>
-        <div className="settings-actions">
-          <button type="button" className="btn primary" onClick={() => void save()} disabled={!dirty || saving}>
-            {saving ? "Saving…" : "Save exclusions"}
-          </button>
+          <label className="field">
+            <span className="field-label" style={{ display: "none" }}>
+              Excluded paths
+            </span>
+            <textarea
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setDirty(true);
+              }}
+              spellCheck={false}
+              aria-label="Excluded paths (one per line)"
+              data-testid="excluded-paths"
+            />
+          </label>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => void save()}
+              disabled={!dirty || saving}
+            >
+              {saving ? "Saving…" : "Save exclusions"}
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="settings-section">Context & data</div>
-      <div className="info-row col">
-        <span className="trust-cue" style={{ fontSize: 12 }}>
-          <Icon name="shield" size={14} />
-          <span>
-            <strong>Runs locally.</strong> Handover binds to 127.0.0.1, attaches files only
-            after an exclusion check, caps everything at 1 MiB, and never uploads your
-            context — only the agent you choose ever sees it.
+      <div className="settings-section">Context &amp; data</div>
+      <div className="settings-group">
+        <div className="g-row">
+          <span className="trust-cue">
+            <Icon name="shield" size={15} />
+            <span>
+              <strong>Runs locally.</strong> Handover binds to 127.0.0.1, checks exclusions
+              before reading files, caps everything at 1 MiB, and never uploads your context.
+            </span>
           </span>
-        </span>
+        </div>
       </div>
 
       <div className="settings-section">History</div>
-      <div className="info-row">
-        <div>
-          <div className="info-label">Session history</div>
-          <div className="info-desc">
-            Recent handoffs live in memory while Handover runs — quitting the app clears them.
+      <div className="settings-group">
+        <div className="g-row">
+          <div>
+            <div className="info-label">Session history</div>
+            <div className="info-desc">
+              Recent handoffs live in memory while Handover runs — quitting the app clears them.
+            </div>
           </div>
+          <button
+            type="button"
+            className={`btn danger${confirmClear ? " armed" : ""}`}
+            onClick={() => (confirmClear ? void clear() : setConfirmClear(true))}
+            data-testid="clear-history"
+          >
+            {confirmClear ? "Confirm?" : "Clear history"}
+          </button>
         </div>
-        <button
-          type="button"
-          className={`btn danger${confirmClear ? " armed" : ""}`}
-          onClick={() => (confirmClear ? void clear() : setConfirmClear(true))}
-          data-testid="clear-history"
-        >
-          {confirmClear ? "Confirm?" : "Clear history"}
-        </button>
       </div>
     </>
   );

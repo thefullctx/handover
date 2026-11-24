@@ -1,7 +1,7 @@
 // Handover icon system.
 //
-// Brand mark is the metal “H” app icon (PNG). Action icons are geometric
-// SVG (24×24 viewBox, 1.6 stroke, round joins/caps).
+// Brand mark is "the pass" (see brand/README.md). Action icons use geometric
+// SVG (24x24 viewBox, 1.75 stroke, round joins/caps) aligned with SF Symbols.
 
 import type { ReactElement } from "react";
 
@@ -92,17 +92,23 @@ export function AgentLogo({
 const PATHS: Record<string, ReactElement> = {
   settings: (
     <>
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M12 2.6v2.5M12 18.9v2.5M2.6 12h2.5M18.9 12h2.5M5.4 5.4l1.8 1.8M16.8 16.8l1.8 1.8M18.6 5.4l-1.8 1.8M7.2 16.8l-1.8 1.8" />
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09c-.66 0-1.25.4-1.51 1Z" />
     </>
   ),
-  close: <path d="M6 6l12 12M18 6L6 18" />,
+  close: <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />,
   back: <path d="M14.5 5.5 8 12l6.5 6.5" />,
   chevronRight: <path d="M9.5 5.5 16 12l-6.5 6.5" />,
   chevronDown: <path d="M6 9.5l6 6 6-6" />,
+  chevronsUpDown: (
+    <>
+      <path d="M7.5 9.5 12 5l4.5 4.5" />
+      <path d="M7.5 14.5 12 19l4.5-4.5" />
+    </>
+  ),
   copy: (
     <>
-      <rect x="9" y="9" width="11.5" height="11.5" rx="2.2" />
+      <rect x="9" y="9" width="11.5" height="11.5" rx="2.4" />
       <path d="M5 15V5.8A2.8 2.8 0 0 1 7.8 3H15" />
     </>
   ),
@@ -231,7 +237,7 @@ const PATHS: Record<string, ReactElement> = {
   ),
   keyboard: (
     <>
-      <rect x="3" y="6" width="18" height="12" rx="2.2" />
+      <rect x="3" y="6" width="18" height="12" rx="2.4" />
       <path d="M6.8 10h.01M10 10h.01M13.2 10h.01M16.4 10h.01M7 14h10" />
     </>
   ),
@@ -290,7 +296,7 @@ export function Icon({
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.6}
+      strokeWidth={1.75}
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
