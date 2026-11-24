@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import { HandoverMark, Icon } from "./Icons";
+import { AgentLogo, HandoverMark, Icon } from "./Icons";
 import { usePaletteSize } from "./lib/usePaletteSize";
-import AgentDropdown, { type DdGroup, type DdItem } from "./components/AgentDropdown";
+import AgentPicker, { isAgentRunning, type PickerGroup, type PickerItem } from "./components/AgentPicker";
 import ChatView from "./components/ChatView";
 import ErrorState from "./components/ErrorState";
 import HistoryList from "./components/HistoryList";
 import ResultPanel from "./components/ResultPanel";
 import ShortcutSheet from "./components/ShortcutSheet";
 import WelcomeOverlay from "./components/WelcomeOverlay";
-import { captureSnippet, byteLength, failureMessage, fmtDuration, formatShortcut, replySnippet, truncate } from "./lib/format";
+import { captureSnippet, byteLength, failureMessage, fmtDuration, outcomeTitle, replySnippet, truncate } from "./lib/format";
 import {
   approveSession,
   clearHistory,
@@ -52,15 +52,29 @@ const ASK_ACTION: Action = {
   prompt_template: "",
 };
 
-/** How often the visible sheet re-reads agent/process status from the daemon
- *  (process lights stay live while you work in another terminal). Exported
- *  so tests can drive the clock precisely. */
+/** How often the visible sheet re-reads agent/process status from the daemon. */
 export const STATUS_POLL_MS = 4000;
 
-/** Output idle for this long and the handoff reads as "Wrapping up". The
- *  phase reverts to "Agent responding" the instant output resumes, so a slow
- *  agent that pauses mid-thought never looks finished. */
+/** Output idle for this long and the handoff reads as "Wrapping up". */
 const WRAPPING_IDLE_MS = 3000;
+
+/** First available agent index in the flat picker list (0 when none are available). */
+function firstSelectableIndex(list: PickerItem[]): number {
+  const idx = list.findIndex((it) => it.agent.status.available);
+  return idx >= 0 ? idx : 0;
+}
+
+/** Moves the picker highlight, skipping unavailable rows when possible. */
+function moveHighlight(list: PickerItem[], current: number, delta: 1 | -1): number {
+  if (list.length === 0) return 0;
+  const anyAvailable = list.some((it) => it.agent.status.available);
+  if (!anyAvailable) return (current + delta + list.length) % list.length;
+  for (let offset = 1; offset <= list.length; offset++) {
+    const next = (current + delta * offset + list.length) % list.length;
+    if (list[next].agent.status.available) return next;
+  }
+  return current;
+}
 
 export default function App() {
   const [step, setStep] = useState<PaletteStep>("loading");
@@ -74,84 +88,59 @@ export default function App() {
   const [recentIds, setRecentIds] = useState<string[]>([]);
   /** Live-streamed agent output while sending. */
   const [live, setLive] = useState("");
-  /** Byte length of the rendered prompt, straight from `handoff:started` —
-   *  a real measurement from Rust, never re-derived in the UI. */
+  /** Byte length of the rendered prompt, straight from `handoff:started`. */
   const [promptBytes, setPromptBytes] = useState<number | null>(null);
-  /** Wall-clock stamps behind the activity section: when the send began, and
-   *  when agent output first arrived / last arrived. */
+  /** Wall-clock stamps behind the activity section. */
   const [sendStartedAt, setSendStartedAt] = useState<number | null>(null);
   const [firstChunkAt, setFirstChunkAt] = useState<number | null>(null);
   const [lastChunkAt, setLastChunkAt] = useState<number | null>(null);
-  /** Mirror of the live stamps above, readable synchronously when a handoff
-   *  completes. The `doSend` callback captures its state once, so it cannot
-   *  read the current values off the closure — but time-to-first-response
-   *  only exists in the stream, so it has to be snapshotted at the moment
-   *  the send resolves, not recomputed afterwards. */
   const sendStartedAtRef = useRef<number | null>(null);
   const firstChunkAtRef = useRef<number | null>(null);
   const promptBytesRef = useRef<number | null>(null);
-  /** Ticks while the chat is open so the elapsed timer AND the phase
-   *  derivation (idle > WRAPPING_IDLE_MS) stay live. */
   const [now, setNow] = useState(() => Date.now());
-  /** Live chat thread (a conversation, not one reply) — turns append in
-   *  place and every message explicitly resumes the same session. */
+  /** Live chat thread (resumes the same session). */
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
-  /** The session being resumed — seeded from the agent's freshest live
-   *  session, updated if the agent rotates sessions mid-chat. */
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
-  /** True once the thread is anchored to a specific session (adopted from a
-   *  completed send, or seeded from history). False on a freshly picked
-   *  thread: the first message sends with no session so the daemon resolves
-   *  freshest-first itself — an owned live session then falls back to a
-   *  fresh send instead of failing. */
   const [chatSessionExplicit, setChatSessionExplicit] = useState(false);
   const [chatAgent, setChatAgent] = useState<AgentMeta | null>(null);
-  /** The message currently in flight (in-flight user bubble in the thread). */
   const [chatPendingText, setChatPendingText] = useState<string | null>(null);
-  /** Composer prefill — captured clipboard / dropped context. Re-applied to
-   *  a fresh chat whenever `draftSignal` bumps. */
+  /** Composer prefill — dropped context. */
   const [draft, setDraft] = useState("");
   const [draftSignal, setDraftSignal] = useState(0);
-  /** First-run onboarding overlay (teach by doing — dismiss is the shortcut). */
+  /** First-run onboarding overlay. */
   const [showWelcome, setShowWelcome] = useState(false);
-  /** Catalog for the welcome's "pick your assistants" step (loaded lazily). */
   const [welcomeGallery, setWelcomeGallery] = useState<GalleryAgent[]>([]);
-  /** The keyboard cheat-sheet overlay (`?` or the footer button). */
+  /** The keyboard cheat-sheet overlay. */
   const [showShortcuts, setShowShortcuts] = useState(false);
-  /** True while a drag hovers the palette (drop overlay visible). */
+  /** Drag-over overlay + error state. */
   const [dragActive, setDragActive] = useState(false);
-  /** Plain-language error when a drop couldn't be read. */
   const [dropError, setDropError] = useState("");
-  /** Agent id whose approval decision is in flight (buttons disabled). */
+  /** In-flight approval state + note. */
   const [approvingAgent, setApprovingAgent] = useState<string | null>(null);
-  /** Result of the last approval, per agent (verified / fail-soft message). */
   const [approvalNote, setApprovalNote] = useState<{
     agentId: string;
     result: ApprovalResult;
   } | null>(null);
 
-  /** The agent dropdown's trigger button (keyboard focus target). */
-  const ddTriggerRef = useRef<HTMLButtonElement>(null);
-  /** Dropdown state: open/closed, the highlighted option (flat index), and
-   *  a bump counter so reopening always lands the highlight on the selected
-   *  (or first) entry. */
-  const [ddOpen, setDdOpen] = useState(false);
-  const [ddHighlight, setDdHighlight] = useState(0);
-  const [ddOpenTick, setDdOpenTick] = useState(0);
+  /** Top filter input for the always-unfolded agent picker. */
+  const filterInputRef = useRef<HTMLInputElement>(null);
+  const [filterQuery, setFilterQuery] = useState("");
+  const [highlight, setHighlight] = useState(0);
+
+  /** Compact pop-up agent switcher inside the chat header. */
+  const chatSwitcherRef = useRef<HTMLDivElement>(null);
+  const [chatMenuOpen, setChatMenuOpen] = useState(false);
+
   const generationRef = useRef(0);
   const liveRef = useRef("");
   const handoffIdRef = useRef<string | null>(null);
   const stepRef = useRef<PaletteStep>(step);
-  /** Whether the first-run welcome still needs presenting (lazy-loaded). */
   const welcomePendingRef = useRef<boolean | null>(null);
-  /** Mirrors `showWelcome` synchronously so the palette:open listener never
-   *  sees a stale value (a fast second press must be able to dismiss). */
   const showWelcomeRef = useRef(false);
   const setWelcome = useCallback((v: boolean) => {
     showWelcomeRef.current = v;
     setShowWelcome(v);
   }, []);
-  /** dragenter/dragleave depth — dragleave fires per child boundary. */
   const dragDepthRef = useRef(0);
 
   const welcomePending = useCallback((): boolean => {
@@ -166,6 +155,7 @@ export default function App() {
     }
     return welcomePendingRef.current;
   }, []);
+
   useEffect(() => {
     stepRef.current = step;
   }, [step]);
@@ -180,19 +170,15 @@ export default function App() {
       const [p, h] = await Promise.all([getPalettePayload(), getRecentHandoffs()]);
       setPayload(p);
       setHistory(h);
-      // Seed \"recently used\" ordering from the session history.
       setRecentIds((cur) => {
         const fromHistory = [...new Set(h.map((o) => o.agent_id))];
         return [...fromHistory, ...cur.filter((id) => !fromHistory.includes(id))].slice(0, 5);
       });
-      // The palette opens clean — clipboard capture was removed, so the chat
-      // composer starts empty (dropped files/text still seed it).
       setDraft("");
       setDraftSignal((n) => n + 1);
-      // The palette reopens on a fresh picker — closed, no stale highlight,
-      // keyboard focus back on the trigger.
-      setDdOpen(false);
-      setDdHighlight(0);
+      setFilterQuery("");
+      setHighlight(0);
+      setChatMenuOpen(false);
       setOutcome(null);
       setErrorText("");
       setFromHistory(false);
@@ -212,30 +198,24 @@ export default function App() {
       setChatAgent(null);
       setChatPendingText(null);
       setStep("home");
-      requestAnimationFrame(() => ddTriggerRef.current?.focus());
+      requestAnimationFrame(() => filterInputRef.current?.focus());
     } catch (e) {
       setErrorText(String(e));
       setStep("error");
     }
   }, []);
 
-  /** Dismisses the welcome for good (Start button, Enter, or a second press
-   *  of the hotkey via onPaletteOpen). The next launch stays quiet. */
   const dismissWelcome = useCallback(() => {
     try {
       localStorage.setItem(WELCOME_STORAGE_KEY, "1");
     } catch {
-      /* storage unavailable — the flag simply won't persist */
+      /* storage unavailable */
     }
     welcomePendingRef.current = false;
     setWelcome(false);
-    requestAnimationFrame(() => ddTriggerRef.current?.focus());
+    requestAnimationFrame(() => filterInputRef.current?.focus());
   }, [setWelcome]);
 
-  /** The palette's primary entry point (the global hotkey).
-   *  - First ever run: present the welcome overlay (teach by doing).
-   *  - Welcome visible: the press IS the dismissal — hide it, then refresh.
-   *  - Otherwise: refresh the sheet. */
   const onPaletteOpen = useCallback(() => {
     if (showWelcomeRef.current) {
       dismissWelcome();
@@ -243,8 +223,6 @@ export default function App() {
     } else if (welcomePending()) {
       welcomePendingRef.current = false;
       setWelcome(true);
-      // Load the catalog for the pick-your-assistants step (best effort —
-      // onboarding must never fail because the gallery didn't load).
       getAvailableAgents()
         .then(setWelcomeGallery)
         .catch(() => setWelcomeGallery([]));
@@ -277,9 +255,19 @@ export default function App() {
     void hidePalette();
   }, []);
 
-  // Live elapsed timer while a handoff is running. The same tick also drives
-  // `now`, which is what lets the activity phase notice that output has gone
-  // quiet (wrapping up) without its own timer.
+  // Click-outside closes the compact chat agent switcher popover.
+  useEffect(() => {
+    if (!chatMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!chatSwitcherRef.current?.contains(e.target as Node)) {
+        setChatMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [chatMenuOpen]);
+
+  // Live elapsed timer while a handoff is running.
   useEffect(() => {
     if (step !== "chat") {
       setElapsed(0);
@@ -293,12 +281,7 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [step]);
 
-  // Live process lights: while the sheet is visible, re-read the daemon's
-  // agent/session status so a dot flips red→green the moment you start (or
-  // quit) an agent elsewhere — no hide/reopen cycle needed. This merge is
-  // deliberately SURGICAL: only `payload` updates, so the open dropdown, its
-  // highlight, the chat thread and the composer draft all survive untouched.
-  // Tests shorten the interval via `__handoverStatusPollMs` (real timers).
+  // Live process lights: surgical payload refresh while the palette is open.
   useEffect(() => {
     if (step !== "home" && step !== "chat") return;
     const ms =
@@ -307,7 +290,7 @@ export default function App() {
     const id = window.setInterval(() => {
       void getPalettePayload()
         .then((p) => setPayload(p))
-        .catch(() => undefined); // one missed tick must never surface as an error
+        .catch(() => undefined);
     }, ms);
     return () => window.clearInterval(id);
   }, [step]);
@@ -316,8 +299,6 @@ export default function App() {
     void notifyResult(title, body).catch(() => undefined);
   }, []);
 
-  /** Approve/deny a blocked session. Only an explicit button press injects;
-   *  the daemon re-checks + verifies (fail soft — never a false success). */
   const handleApprove = useCallback(
     async (agent: AgentMeta, session: LiveSession, approve: boolean) => {
       setApprovingAgent(agent.id);
@@ -338,11 +319,9 @@ export default function App() {
   );
 
   // -------------------------------------------------------------------------
-  // Drag & drop capture — dropped text/files pre-fill the chat composer
+  // Drag & drop capture
   // -------------------------------------------------------------------------
 
-  /** Builds a Capture from the files `read_dropped_files` returned, or a
-   *  plain-language reason why nothing could be used. */
   const captureFromDroppedFiles = useCallback(
     (files: DroppedFile[]): { capture?: Capture; error?: string } => {
       const usable = files.filter((f) => f.kind === "text" || f.kind === "image");
@@ -351,14 +330,16 @@ export default function App() {
         const reasons = unusable
           .map((f) => `${f.name}: ${f.note ?? "not readable"}`)
           .join("; ");
-        return { error: `Couldn't read the dropped file${files.length > 1 ? "s" : ""} — ${reasons}` };
+        return {
+          error: `Couldn't read the dropped file${files.length > 1 ? "s" : ""} — ${reasons}`,
+        };
       }
-      const now = new Date().toISOString();
+      const stamp = new Date().toISOString();
       if (usable.length === 1) {
         const f = usable[0];
         const capture: Capture = {
           id: "",
-          timestamp: now,
+          timestamp: stamp,
           source: { type: "file" },
           content:
             f.kind === "image"
@@ -368,15 +349,13 @@ export default function App() {
         };
         return { capture };
       }
-      // Multiple usable files — hand them off as one mixed capture. The
-      // prompt renderer joins `items` with path headers.
       const items = usable.map((f) =>
         f.kind === "image" ? `Attached image: ${f.path}` : `File: ${f.path}\n\n${f.text ?? ""}`
       );
       return {
         capture: {
           id: "",
-          timestamp: now,
+          timestamp: stamp,
           source: { type: "file" },
           content: { type: "mixed", text: null, items },
           metadata: { dropped: "true", files: String(usable.length) },
@@ -386,8 +365,6 @@ export default function App() {
     []
   );
 
-  /** Installs dropped context as the composer draft (shown on home, pre-fills
-   *  the chat composer for the next agent chosen). */
   const installDroppedCapture = useCallback((capture: Capture) => {
     setDraft(captureSnippet(capture));
     setDraftSignal((n) => n + 1);
@@ -412,7 +389,6 @@ export default function App() {
     [captureFromDroppedFiles, installDroppedCapture]
   );
 
-  /** Text dropped directly (DOM drag — webviews allow text drags). */
   const applyDroppedText = useCallback(
     (raw: string) => {
       const text = raw.trim();
@@ -428,7 +404,6 @@ export default function App() {
     [installDroppedCapture]
   );
 
-  // DOM handlers for text drags; file drags arrive via `tauri://drag-*`.
   const onDragEnter = useCallback((e: DragEvent) => {
     e.preventDefault();
     dragDepthRef.current += 1;
@@ -448,15 +423,12 @@ export default function App() {
       e.preventDefault();
       dragDepthRef.current = 0;
       setDragActive(false);
-      // Files are handled by the native tauri://drag-drop event (the webview
-      // won't expose dataTransfer.files for external drags on macOS).
       const text = e.dataTransfer?.getData("text/plain") ?? "";
       if (text.trim()) applyDroppedText(text);
     },
     [applyDroppedText]
   );
 
-  // Event listeners live here (after all handlers they reference).
   useEffect(() => {
     const unlisteners: (() => void)[] = [];
     listen("palette:open", onPaletteOpen).then((fn) => unlisteners.push(fn));
@@ -466,40 +438,21 @@ export default function App() {
     );
     listen<{ id: string; stream: string; chunk: string }>("handoff:output", (e) => {
       if (stepRef.current !== "chat") return;
-      // Ignore chunks that do not belong to the current handoff (dismissed
-      // palette, retried send, or a second window). The comparison is
-      // deliberately unguarded: before this send's handoff:started arrives
-      // `handoffIdRef.current` is null, and `id !== null` rejects every
-      // chunk — including stragglers still streaming from a previous,
-      // still-running handoff. Guarding with `handoffIdRef.current &&`
-      // would disable the filter for exactly that window and splice old
-      // output into the new turn (and stamp its time-to-first-response).
       if (e.payload.id !== handoffIdRef.current) return;
       let text = liveRef.current + e.payload.chunk;
       if (text.length > 500_000) text = text.slice(-500_000);
       liveRef.current = text;
       setLive(text);
-      // Activity stamps: first output drives "time to first response", the
-      // latest one drives the wrapping-up phase. Both are real observations
-      // of the stream, not estimates.
       const at = Date.now();
       setFirstChunkAt((prev) => (prev === null ? at : prev));
       setLastChunkAt(at);
       if (firstChunkAtRef.current === null) firstChunkAtRef.current = at;
     }).then((fn) => unlisteners.push(fn));
-    // The daemon emits the stable handoff id + rendered prompt size as soon
-    // as the send starts. The id correlates streamed `handoff:output` chunks
-    // with this send (see above); prompt_len is a real measurement for stats.
     listen<{ id: string; prompt_len: number }>("handoff:started", (e) => {
       handoffIdRef.current = e.payload.id;
-      // The rendered prompt's byte size, measured in Rust. This is the "prompt
-      // size" stat in the activity section.
       setPromptBytes(e.payload.prompt_len);
       promptBytesRef.current = e.payload.prompt_len;
     }).then((fn) => unlisteners.push(fn));
-    // External file drags: WKWebView blocks dataTransfer.files, so Tauri
-    // forwards the drop paths through these native events. Text drags come
-    // through the DOM handlers on the root instead.
     listen("tauri://drag-enter", () => setDragActive(true)).then((fn) =>
       unlisteners.push(fn)
     );
@@ -517,9 +470,10 @@ export default function App() {
     };
   }, [refresh, openHistory, onPaletteOpen, applyDroppedFiles]);
 
+  // -------------------------------------------------------------------------
+  // Agent grouping + filtering
+  // -------------------------------------------------------------------------
 
-  /** The agent order for BOTH rendering and keyboard navigation — one list,
-   *  so the highlighted row is always the one Enter chats with. */
   const orderedAgents = useMemo((): AgentMetaStatus[] => {
     if (!payload) return [];
     const rank = (a: AgentMetaStatus): number => {
@@ -532,9 +486,6 @@ export default function App() {
     );
   }, [payload, recentIds]);
 
-  /** Freshest live session per agent (sessions arrive freshest-first from the
-   *  daemon) — drives the Running-now grouping, status chips and the session
-   *  each chat resumes. */
   const sessionsByAgent = useMemo(() => {
     const m = new Map<string, LiveSession>();
     for (const s of payload?.sessions ?? []) {
@@ -543,54 +494,54 @@ export default function App() {
     return m;
   }, [payload]);
 
-  /** Grouped dropdown entries: Running now → Available → Not found. The
-   *  trigger names the agent being chatted with; the menu is the picker.
-   *  Group headers are decorative; agent options are what the keyboard
-   *  navigates (flat index across groups). */
-  const ddGroups = useMemo((): DdGroup[] => {
+  /** Full grouped list (used by the chat switcher and as the filter base). */
+  const allItems = useMemo((): PickerItem[] => {
+    return orderedAgents.map((a) => ({
+      agent: a,
+      session: sessionsByAgent.get(a.meta.id) ?? null,
+    }));
+  }, [orderedAgents, sessionsByAgent]);
+
+  /** Filtered grouped list for the always-unfolded home picker. */
+  const pickerGroups = useMemo((): PickerGroup[] => {
     if (!payload) return [];
-    const running: DdItem[] = [];
-    const available: DdItem[] = [];
-    const missing: DdItem[] = [];
+    const q = filterQuery.trim().toLowerCase();
+    const running: PickerItem[] = [];
+    const available: PickerItem[] = [];
+    const missing: PickerItem[] = [];
     for (const a of orderedAgents) {
-      const session = sessionsByAgent.get(a.meta.id);
-      // "Running now" means the agent's process is alive right now (Hermes
-      // with its TUI open, omp in a terminal) or its session is actively
-      // writing — not merely that a session file exists. A quiet session on
-      // an idle agent (e.g. Codex with no process) sits under Available with
-      // its honest "last" chip instead.
+      if (q) {
+        const hay = `${a.meta.name} ${a.meta.id} ${a.meta.description}`.toLowerCase();
+        if (!hay.includes(q)) continue;
+      }
+      const session = sessionsByAgent.get(a.meta.id) ?? null;
       const runningNow = !!a.status.running || session?.activity === "working";
-      if (runningNow) running.push({ agent: a, session: session ?? null });
-      else if (a.status.available) available.push({ agent: a, session: session ?? null });
-      else missing.push({ agent: a, session: session ?? null });
+      if (runningNow) running.push({ agent: a, session });
+      else if (a.status.available) available.push({ agent: a, session });
+      else missing.push({ agent: a, session });
     }
-    const groups: DdGroup[] = [];
+    const groups: PickerGroup[] = [];
     if (running.length) groups.push({ label: "Running now", items: running });
     if (available.length) groups.push({ label: "Available", items: available });
     if (missing.length) groups.push({ label: "Not found", items: missing });
     return groups;
-  }, [payload, orderedAgents, sessionsByAgent]);
+  }, [payload, orderedAgents, sessionsByAgent, filterQuery]);
 
-  /** Flat option order for keyboard navigation (visual order). */
-  const ddItems = useMemo(() => ddGroups.flatMap((g) => g.items), [ddGroups]);
+  const pickerItems = useMemo(() => pickerGroups.flatMap((g) => g.items), [pickerGroups]);
 
   // -------------------------------------------------------------------------
-  // Send (chat only — the palette has no action buttons)
+  // Send (chat)
   // -------------------------------------------------------------------------
 
   const doSend = useCallback(
     async (agent: AgentMeta, capture: Capture, opts?: { sessionId?: string | null }) => {
       const gen = generationRef.current;
-      const action =
-        payload?.actions.find((a) => a.id === "ask") ?? ASK_ACTION;
+      const action = payload?.actions.find((a) => a.id === "ask") ?? ASK_ACTION;
       setStep("chat");
       setElapsed(0);
       liveRef.current = "";
       handoffIdRef.current = null;
       setLive("");
-      // Fresh activity measurements for this handoff. promptBytes is reset
-      // too — until this send's handoff:started lands, the previous
-      // handoff's prompt size would otherwise be attributed to this one.
       const startedAt = Date.now();
       setSendStartedAt(startedAt);
       setPromptBytes(null);
@@ -600,9 +551,6 @@ export default function App() {
       firstChunkAtRef.current = null;
       promptBytesRef.current = null;
 
-      /** Snapshots the two stream-only measurements onto the finished turn.
-       *  Output volume and the prompt are recoverable from the outcome, but
-       *  time-to-first-response is not — it happened during the stream. */
       const measured = () => ({
         promptBytes: promptBytesRef.current,
         firstResponseMs:
@@ -612,23 +560,19 @@ export default function App() {
       });
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
 
-      /** A failed exchange still lands in the thread — the user sees the
-       *  error in place instead of being bounced out of the conversation. */
-      const appendFailedTurn = (outcome: SendOutcome) => {
-        setChatTurns((t) => [...t, { prompt: outcome.prompt, outcome, ...measured() }]);
+      const appendFailedTurn = (out: SendOutcome) => {
+        setChatTurns((t) => [...t, { prompt: out.prompt, outcome: out, ...measured() }]);
         setChatPendingText(null);
-        setOutcome(outcome);
+        setOutcome(out);
         setStep("chat");
       };
 
       try {
         const res = await sendHandoff(action.id, agent.id, capture, opts?.sessionId ?? null);
         setRecentIds((cur) => [agent.id, ...cur.filter((id) => id !== agent.id)].slice(0, 5));
-        if (gen !== generationRef.current) return; // stale (palette reopened)
+        if (gen !== generationRef.current) return;
         setOutcome(res);
         if (res.ok) {
-          // Record the session the reply actually landed in (the agent may
-          // have rotated sessions on resume, or fallen back to fresh).
           if (res.session_id) {
             setChatSessionId(res.session_id);
             setChatSessionExplicit(true);
@@ -667,29 +611,19 @@ export default function App() {
     [payload, notify]
   );
 
-  /** Opens a chat with a dropdown entry — the thread lives directly beneath
-   *  the trigger; choosing an agent never navigates away. */
-  const chooseFromDropdown = useCallback(
-    (item: DdItem) => {
-      const { agent, session } = item;
-      if (!agent.status.available) return;
-      setDdOpen(false);
-      setChatAgent(agent.meta);
-      setChatSessionId(session?.session_id ?? null);
-      // New thread, nothing anchored yet: the first message lets the daemon
-      // resolve the session (freshest-first with owned-session fallback).
-      setChatSessionExplicit(false);
-      // The composer keeps its captured/dropped draft — the context follows
-      // the user into whichever conversation they start.
-      setChatTurns([]);
-      setChatPendingText(null);
-    },
-    []
-  );
+  const chooseAgent = useCallback((item: PickerItem) => {
+    const { agent, session } = item;
+    if (!agent.status.available) return;
+    setChatMenuOpen(false);
+    setFilterQuery("");
+    setChatAgent(agent.meta);
+    setChatSessionId(session?.session_id ?? null);
+    setChatSessionExplicit(false);
+    setChatTurns([]);
+    setChatPendingText(null);
+    setStep("chat");
+  }, []);
 
-  /** Open the live chat thread for the current result. Continuing the same
-   *  session keeps the thread (and every message resumes that session); a
-   *  different result seeds a fresh thread from it. */
   const enterChat = useCallback(() => {
     if (!outcome) return;
     const sameThread =
@@ -707,15 +641,11 @@ export default function App() {
       setChatSessionExplicit(true);
       setChatTurns([{ prompt: outcome.prompt, outcome }]);
     }
+    setChatMenuOpen(false);
     setChatPendingText(null);
     setStep("chat");
   }, [outcome, chatSessionId, chatAgent]);
 
-  /** Send a chat message. The first message of a fresh thread carries no
-   *  session (the daemon resolves freshest-first, with owned-session
-   *  fallback); once anchored, every message explicitly resumes the SAME
-   *  session — never left to freshest-resolution. Stays in the thread,
-   *  streams inline. */
   const sendChatMessage = useCallback(
     async (text: string) => {
       const t = text.trim();
@@ -741,12 +671,16 @@ export default function App() {
 
   const goHome = useCallback(() => {
     setStep("home");
-    setDdOpen(false);
+    setChatAgent(null);
+    setChatMenuOpen(false);
+    setFilterQuery("");
+    setHighlight(0);
     setFromHistory(false);
-    requestAnimationFrame(() => ddTriggerRef.current?.focus());
+    requestAnimationFrame(() => filterInputRef.current?.focus());
   }, []);
 
   const goHistory = useCallback(() => {
+    setChatMenuOpen(false);
     setStep("history");
     setFromHistory(false);
   }, []);
@@ -757,8 +691,6 @@ export default function App() {
     setStep("done");
   }, []);
 
-  /** Retry: open a chat with the same agent, the original context pre-filled
-   *  in the composer — one ⌘↵ re-sends it. */
   const retryFromHistory = useCallback((o: SendOutcome) => {
     setChatAgent({
       id: o.agent_id,
@@ -775,16 +707,14 @@ export default function App() {
     setStep("chat");
   }, []);
 
-  /** Send to another agent: pre-fill the composer and open the picker — the
-   *  choice is explicit. */
-  const resendWithAnotherFromHistory = useCallback((o: SendOutcome) => {
-    setDraft(captureSnippet(o.capture ?? null) ?? "");
-    setDraftSignal((n) => n + 1);
-    goHome();
-    // The picker opens with the context ready — draw attention to it.
-    setDdOpen(true);
-    setDdOpenTick((n) => n + 1);
-  }, [goHome]);
+  const resendWithAnotherFromHistory = useCallback(
+    (o: SendOutcome) => {
+      setDraft(captureSnippet(o.capture ?? null) ?? "");
+      setDraftSignal((n) => n + 1);
+      goHome();
+    },
+    [goHome]
+  );
 
   const clearAllHistory = useCallback(async () => {
     try {
@@ -796,26 +726,24 @@ export default function App() {
     }
   }, []);
 
-  // Clamp the dropdown highlight when the list shrinks (payload refresh).
+  // Clamp highlight and keep it on an available row whenever the list changes.
   useEffect(() => {
-    const len = ddItems.length;
-    if (len > 0 && ddHighlight >= len) setDdHighlight(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payload, ddItems.length]);
-
-  /** Reopening the dropdown always starts from a sane highlight: the agent
-   *  being chatted with, else the first entry. */
-  useEffect(() => {
-    if (!ddOpen) return;
-    const cur = chatAgent ? ddItems.findIndex((it) => it.agent.meta.id === chatAgent.id) : -1;
-    setDdHighlight(cur >= 0 ? cur : 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ddOpen, ddOpenTick]);
+    const len = pickerItems.length;
+    if (len === 0) {
+      if (highlight !== 0) setHighlight(0);
+    } else if (highlight >= len || !pickerItems[highlight]?.agent.status.available) {
+      const next = firstSelectableIndex(pickerItems);
+      if (next !== highlight) setHighlight(next);
+    }
+  }, [pickerItems, highlight]);
 
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      // Overlays own the keyboard while open. The welcome answers one
-      // question (start now?); the cheat sheet just needs Escape/close.
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        openSettings();
+        return;
+      }
       if (showWelcome) {
         if (e.key === "Escape") hide();
         else if (e.key === "Enter") dismissWelcome();
@@ -825,11 +753,9 @@ export default function App() {
         if (e.key === "Escape") setShowShortcuts(false);
         return;
       }
-      // `?` opens the cheat sheet — but only when the user isn't typing
-      // (in the search box or an editor, `?` belongs to the text).
+      const target = e.target as HTMLElement | null;
       if (e.key === "?") {
-        const t = e.target as HTMLElement | null;
-        const typing = t?.tagName === "INPUT" || t?.tagName === "TEXTAREA";
+        const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
         if (!typing) {
           e.preventDefault();
           setShowShortcuts(true);
@@ -837,58 +763,52 @@ export default function App() {
         }
       }
       if (e.key === "Escape") {
-        if (step === "home" && ddOpen) {
-          // First Escape closes only the picker; the sheet stays up.
-          setDdOpen(false);
-        } else if (step === "history") {
-          hide();
-        } else if (step === "done" && fromHistory) {
-          setStep("history");
+        if (step === "home" && filterQuery) {
+          e.preventDefault();
+          setFilterQuery("");
+          setHighlight(0);
+        } else if (step === "chat" && chatMenuOpen) {
+          e.preventDefault();
+          setChatMenuOpen(false);
         } else if (step === "chat") {
+          e.preventDefault();
           goHome();
+        } else if (step === "done" && fromHistory) {
+          e.preventDefault();
+          setStep("history");
         } else {
-          // home / done / error — dismiss. A handoff in flight keeps running;
-          // the completion notification still fires.
           hide();
         }
         return;
       }
-      // Typing in the chat composer must not trigger palette shortcuts.
-      if ((e.target as HTMLElement | null)?.tagName === "TEXTAREA") return;
+
+      if (target?.tagName === "TEXTAREA") return;
 
       if (step === "home") {
-        const list = ddItems;
-        if (!ddOpen) {
-          // ArrowDown opens the picker; Enter/ArrowUp open it too — the
-          // palette is keyboard-first, the menu is always one press away.
-          if (e.key === "ArrowDown" || e.key === "Enter" || e.key === "ArrowUp") {
-            e.preventDefault();
-            setDdOpen(true);
-            setDdOpenTick((n) => n + 1);
-          }
-          return;
-        }
+        const list = pickerItems;
         if (list.length === 0) return;
         if (e.key === "ArrowDown") {
           e.preventDefault();
-          setDdHighlight((s) => (s + 1) % list.length);
+          setHighlight((s) => moveHighlight(list, s, 1));
         } else if (e.key === "ArrowUp") {
           e.preventDefault();
-          setDdHighlight((s) => (s - 1 + list.length) % list.length);
-        } else if (e.key === "Enter") {
+          setHighlight((s) => moveHighlight(list, s, -1));
+        } else if (e.key === "Enter" && target?.tagName !== "BUTTON") {
           e.preventDefault();
-          chooseFromDropdown(list[ddHighlight]);
+          chooseAgent(list[highlight]);
         }
       }
     },
     [
       step,
-      ddItems,
-      ddOpen,
-      ddHighlight,
-      chooseFromDropdown,
+      filterQuery,
+      chatMenuOpen,
+      pickerItems,
+      highlight,
+      chooseAgent,
       goHome,
       hide,
+      openSettings,
       fromHistory,
       showWelcome,
       showShortcuts,
@@ -915,18 +835,12 @@ export default function App() {
 
   const copyReply = useCallback(() => {
     if (outcome?.receipt?.stdout) copyText_(outcome.receipt.stdout);
-  }, [outcome, copyText_]);// -------------------------------------------------------------------------
-// Render
-// -------------------------------------------------------------------------
+  }, [outcome, copyText_]);
 
-  /**
-   * The "Show activity" payload — real measurements only. The phase is
-   * derived from the output stream (never guessed): no output yet →
-   * "Sending context", output flowing → "Agent responding", output idle past
-   * {@link WRAPPING_IDLE_MS} → "Wrapping up" (and straight back if output
-   * resumes). Output volume is the live stream while sending, and the
-   * receipt's stdout+stderr once the handoff completed.
-   */
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
+
   const activity: HandoffActivity | null = useMemo(() => {
     const sending = chatPendingText !== null;
     if (!sending && chatTurns.length === 0) return null;
@@ -939,10 +853,7 @@ export default function App() {
           : "responding";
     const output = sending
       ? live
-      : [
-          outcome?.receipt?.stdout ?? "",
-          outcome?.receipt?.stderr ?? "",
-        ]
+      : [outcome?.receipt?.stdout ?? "", outcome?.receipt?.stderr ?? ""]
           .filter(Boolean)
           .join("\n");
     return {
@@ -968,279 +879,425 @@ export default function App() {
   ]);
 
   const chatLiveSession = chatAgent ? sessionsByAgent.get(chatAgent.id) ?? null : null;
+  const chatAgentStatus = chatAgent
+    ? payload?.agents.find((a) => a.meta.id === chatAgent.id)
+    : undefined;
+  const chatIsRunning =
+    !!chatAgentStatus?.status.running || chatLiveSession?.activity === "working";
 
-  // Window size: compact on the plain picker (header, trigger, hint line);
-  // expanded — room for the open agent menu — for everything else, and never
-  // taller than that. See usePaletteSize.
   const paletteRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
-  const compact =
-    (step === "home" || step === "loading") &&
-    !chatAgent &&
-    !ddOpen &&
-    !dragActive &&
-    !showWelcome &&
-    !showShortcuts;
-  usePaletteSize(paletteRef, cardRef, compact);
+  const sizeMode: "home" | "panel" =
+    (step === "home" || step === "loading") && !dragActive && !showWelcome && !showShortcuts
+      ? "home"
+      : "panel";
+  usePaletteSize(paletteRef, cardRef, sizeMode);
 
   return (
     <div
       ref={paletteRef}
-      className={`palette${dragActive ? " dropping" : ""}${compact ? " compact" : ""}`}
+      className={`palette${dragActive ? " dropping" : ""}${sizeMode === "home" ? " home-mode" : ""}`}
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
       <div className="palette-stack">
-      <div className="palette-card" ref={cardRef}>
-        {dragActive && (
-          <div className="drop-overlay" data-testid="drop-overlay">
-            <div className="drop-card">
-              <Icon name="file" size={22} />
-              <span className="drop-title">Drop to capture</span>
-              <span className="drop-sub">Files and text pre-fill the chat</span>
+        <div className="palette-card" ref={cardRef}>
+          {dragActive && (
+            <div className="drop-overlay" data-testid="drop-overlay">
+              <div className="drop-card">
+                <Icon name="file" size={22} />
+                <span className="drop-title">Drop to capture</span>
+                <span className="drop-sub">Files and text pre-fill the chat</span>
+              </div>
             </div>
-          </div>
-        )}
-        {showWelcome && (
-          <WelcomeOverlay
-            shortcut={payload?.shortcut ?? "CmdOrCtrl+Shift+A"}
-            gallery={welcomeGallery}
-            onAddAgent={(a) => {
-              // One-tap add from the welcome card; reflect it instantly so
-              // the row flips to "Added" without waiting for the daemon.
-              setWelcomeGallery((g) =>
-                g.map((x) => (x.id === a.id ? { ...x, configured: true } : x))
-              );
-              void configureAgent(a.id, null).catch(() =>
+          )}
+          {showWelcome && (
+            <WelcomeOverlay
+              shortcut={payload?.shortcut ?? "CmdOrCtrl+Shift+A"}
+              gallery={welcomeGallery}
+              onAddAgent={(a) => {
                 setWelcomeGallery((g) =>
-                  g.map((x) => (x.id === a.id ? { ...x, configured: false } : x))
-                )
-              );
-            }}
-            onDismiss={dismissWelcome}
-          />
-        )}
-        {showShortcuts && (
-          <ShortcutSheet
-            shortcut={payload?.shortcut ?? "CmdOrCtrl+Shift+A"}
-            onClose={() => setShowShortcuts(false)}
-          />
-        )}
-        {/* The palette is a borderless window — this strip is the only drag
-            handle. `data-tauri-drag-region` on the header and its (non-
-            interactive) children makes it draggable; see palette.css. */}
-        <header className="palette-header" onDoubleClick={hide} data-tauri-drag-region>
-          <span className="logo" data-tauri-drag-region>
-            <HandoverMark size={16} />
-          </span>
-          <span className="title" data-tauri-drag-region>
-            Handover
-          </span>
-          <span className="hotkey-hint" data-tauri-drag-region>
-            <Icon name="keyboard" size={12} />
-            {formatShortcut(payload?.shortcut ?? "CmdOrCtrl+Shift+A")}
-          </span>
-          {/* Tools live in the header (formerly the floating dock below). */}
-          <div className="header-tools">
-            <button
-              type="button"
-              className={`tool-btn${step === "home" || step === "chat" ? " active" : ""}`}
-              title="Agents — chat"
-              aria-label="Agents — chat"
-              onClick={goHome}
-            >
-              <Icon name="chat" size={15} />
-            </button>
-            <button
-              type="button"
-              className={`tool-btn${step === "history" || step === "done" ? " active" : ""}`}
-              title="Recent handoffs"
-              aria-label="Recent handoffs"
-              onClick={goHistory}
-            >
-              <Icon name="history" size={15} />
-            </button>
-            <span className="tool-sep" aria-hidden="true" />
-            <button
-              type="button"
-              className="tool-btn"
-              title="Keyboard shortcuts (?)"
-              aria-label="Keyboard shortcuts"
-              onClick={() => setShowShortcuts(true)}
-            >
-              <Icon name="keyboard" size={14} />
-            </button>
-            <button
-              type="button"
-              className="tool-btn"
-              title="Settings"
-              aria-label="Open settings"
-              onClick={openSettings}
-            >
-              <Icon name="settings" size={15} />
-            </button>
-          </div>
-        </header>
-
-        <div className="palette-body">
-          {dropError && (
-            <div className="drop-error" role="alert" data-testid="drop-error">
-              <Icon name="warning" size={12} />
-              <span>{dropError}</span>
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label="Dismiss"
-                onClick={() => setDropError("")}
-              >
-                <Icon name="close" size={11} />
-              </button>
-            </div>
+                  g.map((x) => (x.id === a.id ? { ...x, configured: true } : x))
+                );
+                void configureAgent(a.id, null).catch(() =>
+                  setWelcomeGallery((g) =>
+                    g.map((x) => (x.id === a.id ? { ...x, configured: false } : x))
+                  )
+                );
+              }}
+              onDismiss={dismissWelcome}
+            />
           )}
-          {step === "loading" && (
-            <div className="status-body">
-              <div className="spinner" />
-              <p>Loading…</p>
-            </div>
+          {showShortcuts && (
+            <ShortcutSheet
+              shortcut={payload?.shortcut ?? "CmdOrCtrl+Shift+A"}
+              onClose={() => setShowShortcuts(false)}
+            />
           )}
 
-          {/* The picker + its chat are ONE surface ("home"); legacy "chat"
-              steps (retry / keep-chatting / sends) land on the same thing. */}
-          {(step === "home" || step === "chat") && payload && (
-            <div key={`home-${generationRef.current}`} className="step-in" style={{ display: "contents" }}>
-              {draft && (
-                <div className="captured-line" data-testid="captured-line">
-                  <Icon name="clipboard" size={12} />
-                  <span className="captured-text">Will start the chat with: {truncate(draft, 80)}</span>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    aria-label="Clear captured context"
-                    onClick={() => {
-                      setDraft("");
-                      setDraftSignal((n) => n + 1);
-                    }}
-                  >
-                    <Icon name="close" size={11} />
-                  </button>
-                </div>
-              )}
-              {/* The picker + its chat share one surface — choosing an agent
-                  swaps the thread beneath the trigger, it never navigates. */}
-              <AgentDropdown
-                groups={ddGroups}
-                selectedAgentId={chatAgent?.id ?? null}
-                open={ddOpen}
-                highlight={ddHighlight}
-                onHighlight={setDdHighlight}
-                onToggle={() => {
-                  setDdOpen((v) => !v);
-                  setDdOpenTick((n) => n + 1);
-                }}
-                onClose={() => setDdOpen(false)}
-                onChoose={chooseFromDropdown}
-                onOpenSettings={openSettings}
-                triggerRef={ddTriggerRef}
-              />
-              {ddGroups.length === 0 && (
-                <div className="empty-state" data-testid="empty-state">
-                  <span className="status-icon warn" aria-hidden="true">
-                    <Icon name="agentLocal" size={20} />
-                  </span>
-                  <h2>No agents are available yet.</h2>
-                  <p>Running agents (Hermes, Codex, Claude Code, …) appear here automatically.</p>
-                  <div className="status-actions">
-                    <button type="button" className="btn primary" onClick={openSettings}>
-                      <Icon name="settings" size={13} />
-                      Open Settings to add an agent
-                    </button>
-                  </div>
-                </div>
-              )}
-              {chatAgent && (
-                <ChatView
-                  agent={chatAgent}
-                  sessionId={chatSessionId}
-                  session={chatLiveSession}
-                  turns={chatTurns}
-                  sendingText={chatPendingText}
-                  elapsed={elapsed}
-                  activity={activity}
-                  draft={draft}
-                  draftSignal={draftSignal}
-                  onApprove={
-                    chatLiveSession?.blocked
-                      ? (approve) => void handleApprove(chatAgent, chatLiveSession, approve)
+          {/* Unified Tahoe top bar */}
+          <header className="palette-header" onDoubleClick={hide} data-tauri-drag-region>
+            {(step === "home" || step === "loading") && (
+              <>
+                <span className="logo" data-tauri-drag-region>
+                  <HandoverMark size={16} />
+                </span>
+                <input
+                  ref={filterInputRef}
+                  type="text"
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={step === "home" && pickerItems.length > 0}
+                  aria-controls="agent-picker-list"
+                  aria-activedescendant={
+                    step === "home" && pickerItems[highlight]
+                      ? `agent-option-${pickerItems[highlight].agent.meta.id}`
                       : undefined
                   }
-                  approving={approvingAgent === chatAgent.id}
-                  approvalNote={
-                    approvalNote?.agentId === chatAgent.id ? approvalNote.result : null
-                  }
-                  onSend={(t) => void sendChatMessage(t)}
+                  className="palette-filter"
+                  data-testid="agent-filter"
+                  aria-label="Filter agents"
+                  placeholder="Choose an agent or type to filter…"
+                  spellCheck={false}
+                  autoComplete="off"
+                  value={filterQuery}
+                  onChange={(e) => {
+                    setFilterQuery(e.target.value);
+                    setHighlight(0);
+                  }}
                 />
-              )}
+                {filterQuery && (
+                  <button
+                    type="button"
+                    className="icon-btn filter-clear"
+                    aria-label="Clear filter"
+                    onClick={() => {
+                      setFilterQuery("");
+                      setHighlight(0);
+                      filterInputRef.current?.focus();
+                    }}
+                  >
+                    <Icon name="close" size={12} />
+                  </button>
+                )}
+              </>
+            )}
+
+            {step === "chat" && chatAgent && (
+              <>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="All agents"
+                  title="All agents (Esc)"
+                  onClick={goHome}
+                >
+                  <Icon name="back" size={15} />
+                </button>
+                <div className="chat-switcher" ref={chatSwitcherRef}>
+                  <button
+                    type="button"
+                    className="chat-agent-switcher"
+                    data-testid="chat-agent-switcher"
+                    aria-haspopup="menu"
+                    aria-expanded={chatMenuOpen}
+                    aria-label={`Agent: ${chatAgent.name}${chatIsRunning ? " (running)" : " (idle)"}`}
+                    onClick={() => setChatMenuOpen((v) => !v)}
+                  >
+                    <span className="chat-switcher-logo">
+                      <AgentLogo id={chatAgent.id} size={16} />
+                    </span>
+                    <span className="chat-switcher-name">{chatAgent.name}</span>
+                    <span
+                      className={`status-dot ${chatIsRunning ? "ok" : "idle"}`}
+                      aria-hidden="true"
+                    />
+                    <Icon name="chevronsUpDown" size={11} className="chat-switcher-chev" />
+                  </button>
+                  {chatMenuOpen && (
+                    <div
+                      className="chat-switcher-menu"
+                      role="menu"
+                      aria-label="Switch agent"
+                    >
+                      {allItems.map((it) => {
+                        const available = it.agent.status.available;
+                        const active = it.agent.meta.id === chatAgent.id;
+                        const running = isAgentRunning(it);
+                        return (
+                          <button
+                            key={it.agent.meta.id}
+                            type="button"
+                            role="menuitem"
+                            disabled={!available}
+                            className={`chat-switcher-item${active ? " active" : ""}`}
+                            onClick={() => chooseAgent(it)}
+                          >
+                            <span className="chat-switcher-logo">
+                              <AgentLogo id={it.agent.meta.id} size={15} />
+                            </span>
+                            <span className="chat-switcher-item-name">
+                              {it.agent.meta.name}
+                            </span>
+                            <span
+                              className={`status-dot ${
+                                !available ? "off" : running ? "ok" : "idle"
+                              }`}
+                              aria-hidden="true"
+                            />
+                            {active && <Icon name="check" size={12} />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {(step === "history" || step === "done" || step === "error") && (
+              <>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Back"
+                  title="Back"
+                  onClick={() => {
+                    if (step === "done" && fromHistory) setStep("history");
+                    else goHome();
+                  }}
+                >
+                  <Icon name="back" size={15} />
+                </button>
+                <span className="header-view-title" data-tauri-drag-region>
+                  {step === "history"
+                    ? "Recent handoffs"
+                    : step === "done" && outcome
+                      ? outcomeTitle(outcome)
+                      : "Error"}
+                </span>
+              </>
+            )}
+
+            <div className="header-tools">
+              <button
+                type="button"
+                className={`tool-btn${step === "history" || step === "done" ? " active" : ""}`}
+                title="Recent handoffs"
+                aria-label="Recent handoffs"
+                onClick={step === "history" ? goHome : goHistory}
+              >
+                <Icon name="history" size={14} />
+              </button>
+              <button
+                type="button"
+                className="tool-btn"
+                title="Keyboard shortcuts (?)"
+                aria-label="Keyboard shortcuts"
+                onClick={() => setShowShortcuts(true)}
+              >
+                <Icon name="keyboard" size={14} />
+              </button>
+              <button
+                type="button"
+                className="tool-btn"
+                title="Settings (⌘,)"
+                aria-label="Open settings"
+                onClick={openSettings}
+              >
+                <Icon name="settings" size={14} />
+              </button>
             </div>
-          )}
+          </header>
 
-          {step === "done" && outcome && (
-            <ResultPanel
-              outcome={outcome}
-              fromHistory={fromHistory}
-              onBack={() => setStep("history")}
-              onCopyReply={copyReply}
-              onCopyPrompt={copyPrompt}
-              onChat={enterChat}
-              onRepeatWithAnotherAgent={() =>
-                outcome && resendWithAnotherFromHistory(outcome)
-              }
-              onClose={hide}
-            />
-          )}
-
-          {step === "history" && (
-            <div key="history" className="step-in" style={{ display: "contents" }}>
-              <div className="agents-head">
-                <span className="agents-title">Recent handoffs · this session</span>
+          <div className="palette-body">
+            {dropError && (
+              <div className="drop-error" role="alert" data-testid="drop-error">
+                <Icon name="warning" size={12} />
+                <span>{dropError}</span>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Dismiss"
+                  onClick={() => setDropError("")}
+                >
+                  <Icon name="close" size={11} />
+                </button>
               </div>
-              <HistoryList
-                history={history}
-                onOpen={openHistoryEntry}
-                onRetry={retryFromHistory}
-                onCopyResult={(o) => copyText_(replySnippet(o))}
-                onResendWithAnother={resendWithAnotherFromHistory}
-                onClear={() => void clearAllHistory()}
+            )}
+
+            {step === "loading" && (
+              <div className="status-body">
+                <div className="spinner" />
+                <p>Loading…</p>
+              </div>
+            )}
+
+            {step === "home" && payload && (
+              <div key={`home-${generationRef.current}`} className="step-in home-pane">
+                {draft && (
+                  <div className="captured-line" data-testid="captured-line">
+                    <Icon name="clipboard" size={12} />
+                    <span className="captured-text">
+                      Will start the chat with: {truncate(draft, 80)}
+                    </span>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      aria-label="Clear captured context"
+                      onClick={() => {
+                        setDraft("");
+                        setDraftSignal((n) => n + 1);
+                      }}
+                    >
+                      <Icon name="close" size={11} />
+                    </button>
+                  </div>
+                )}
+
+                {payload.agents.length === 0 ? (
+                  <div className="empty-state" data-testid="empty-state">
+                    <span className="status-icon warn" aria-hidden="true">
+                      <Icon name="agentLocal" size={20} />
+                    </span>
+                    <h2>No agents are available yet.</h2>
+                    <p>
+                      Running agents (Claude Code, Hermes, Codex, …) appear here
+                      automatically.
+                    </p>
+                    <div className="status-actions">
+                      <button type="button" className="btn primary" onClick={openSettings}>
+                        <Icon name="settings" size={13} />
+                        Open Settings to add an agent
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <AgentPicker
+                    groups={pickerGroups}
+                    filterQuery={filterQuery}
+                    highlight={highlight}
+                    onHighlight={setHighlight}
+                    onChoose={chooseAgent}
+                    onClearFilter={() => {
+                      setFilterQuery("");
+                      setHighlight(0);
+                      filterInputRef.current?.focus();
+                    }}
+                    onOpenSettings={openSettings}
+                  />
+                )}
+              </div>
+            )}
+
+            {step === "chat" && chatAgent && (
+              <ChatView
+                agent={chatAgent}
+                sessionId={chatSessionId}
+                session={chatLiveSession}
+                turns={chatTurns}
+                sendingText={chatPendingText}
+                elapsed={elapsed}
+                activity={activity}
+                draft={draft}
+                draftSignal={draftSignal}
+                onApprove={
+                  chatLiveSession?.blocked
+                    ? (approve) => void handleApprove(chatAgent, chatLiveSession, approve)
+                    : undefined
+                }
+                approving={approvingAgent === chatAgent.id}
+                approvalNote={
+                  approvalNote?.agentId === chatAgent.id ? approvalNote.result : null
+                }
+                onSend={(t) => void sendChatMessage(t)}
               />
-            </div>
-          )}
+            )}
 
-          {step === "error" && (
-            <ErrorState
-              message={errorText}
-              canRetry={false}
-              onRetry={() => undefined}
-              onCopyPrompt={copyPrompt}
-              onClose={hide}
-            />
-          )}
+            {step === "done" && outcome && (
+              <ResultPanel
+                outcome={outcome}
+                fromHistory={fromHistory}
+                onBack={() => setStep("history")}
+                onCopyReply={copyReply}
+                onCopyPrompt={copyPrompt}
+                onChat={enterChat}
+                onRepeatWithAnotherAgent={() =>
+                  outcome && resendWithAnotherFromHistory(outcome)
+                }
+                onClose={hide}
+              />
+            )}
+
+            {step === "history" && (
+              <div key="history" className="step-in" style={{ display: "contents" }}>
+                <HistoryList
+                  history={history}
+                  onOpen={openHistoryEntry}
+                  onRetry={retryFromHistory}
+                  onCopyResult={(o) => copyText_(replySnippet(o))}
+                  onResendWithAnother={resendWithAnotherFromHistory}
+                  onClear={() => void clearAllHistory()}
+                />
+              </div>
+            )}
+
+            {step === "error" && (
+              <ErrorState
+                message={errorText}
+                canRetry={false}
+                onRetry={() => undefined}
+                onCopyPrompt={copyPrompt}
+                onClose={hide}
+              />
+            )}
+          </div>
+
+          <footer className="palette-footer">
+            <span className="footer-hint">
+              {step === "history" ? (
+                <>
+                  <span className="hint-item">
+                    <kbd>↵</kbd> Open
+                  </span>
+                  <span className="hint-item">
+                    <kbd>esc</kbd> Close
+                  </span>
+                </>
+              ) : step === "chat" ? (
+                <>
+                  <span className="hint-item">
+                    <kbd>↵</kbd> Send
+                  </span>
+                  <span className="hint-item">
+                    <kbd>⇧↵</kbd> Newline
+                  </span>
+                  <span className="hint-item">
+                    <kbd>esc</kbd> Agents
+                  </span>
+                </>
+              ) : step === "home" ? (
+                <>
+                  <span className="hint-item">
+                    <kbd>↑↓</kbd> Select
+                  </span>
+                  <span className="hint-item">
+                    <kbd>↵</kbd> Chat
+                  </span>
+                  <span className="hint-item">
+                    <kbd>esc</kbd> {filterQuery ? "Clear" : "Close"}
+                  </span>
+                </>
+              ) : (
+                <span className="hint-item">
+                  <kbd>esc</kbd> Close
+                </span>
+              )}
+            </span>
+          </footer>
         </div>
-
-        <footer className="palette-footer">
-          <span className="footer-hint">
-            {step === "history"
-              ? "↵ open · esc close"
-              : step === "chat"
-                ? "↵ send · ⇧↵ newline"
-                : step === "home"
-                  ? ddOpen
-                    ? "↑↓ choose an agent · ↵ chat · esc close"
-                    : "↓ open agents · esc close"
-                  : "esc close"}
-          </span>
-        </footer>
-      </div>
       </div>
     </div>
   );

@@ -1,36 +1,28 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { setPaletteHeight } from "./tauri";
 
-/** Room the agent menu needs below the picker: its max-height (palette.css
- *  `--dd-menu-max`, about four agents plus the group labels and the Settings
- *  link) + the 6px gap under the trigger + a little breathing space. More
- *  agents scroll inside the menu instead of growing the window. */
-export const MENU_ROOM = 300 + 6 + 10;
-/** Card height before anything has been measured (matches Rust's 210pt
- *  default window minus the palette's padding). */
-const FALLBACK_COMPACT_CARD = 154;
-const DURATION_MS = 220;
+export const PANEL_CARD_HEIGHT = 500;
+const MIN_HOME_HEIGHT = 240;
+const MAX_HOME_HEIGHT = 500;
+const DURATION_MS = 200;
 const EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
 /**
- * Sizes the palette window to its content.
+ * Keeps the native palette window sized to its content.
  *
- * Compact: only the header, the picker and the hint line — the window is
- * exactly as tall as that. Expanded: the same plus room for the open agent
- * menu; the chat and every other panel live at that one height, never taller.
- *
- * The window itself is resized natively (a tall transparent window would
- * still swallow clicks on whatever is behind it). To keep it smooth the card's
- * height is animated: growing resizes the window first and then animates the
- * card down into it; shrinking animates the card first and resizes last.
+ * - `"home"` (the always-unfolded agent list): tracks the natural card height
+ *   via ResizeObserver (clamped between 240–500px so long lists scroll cleanly)
+ *   and saves it as the default open height.
+ * - `"panel"` (chat, history, result, welcome, shortcuts, error): settles at a
+ *   consistent 500px panel height so conversations have comfortable breathing room.
  */
 export function usePaletteSize(
   paletteRef: RefObject<HTMLElement>,
   cardRef: RefObject<HTMLElement>,
-  compact: boolean
+  mode: "home" | "panel"
 ) {
   const lastCardH = useRef<number | null>(null);
-  const compactCardH = useRef<number | null>(null);
+  const homeCardH = useRef<number | null>(null);
   const generation = useRef(0);
   const anim = useRef<Animation | null>(null);
 
@@ -54,7 +46,7 @@ export function usePaletteSize(
       card.style.flex = "";
     };
     const animate = (from: number, to: number, done: () => void) => {
-      if (!canAnimate || from === to) {
+      if (!canAnimate || Math.abs(from - to) < 2) {
         done();
         return;
       }
@@ -68,13 +60,18 @@ export function usePaletteSize(
       };
     };
 
-    if (compact) {
-      // Natural height of the compact content (the .compact class has
-      // already stopped the card from stretching).
+    if (mode === "home") {
       card.style.height = "";
-      const target = card.getBoundingClientRect().height;
-      compactCardH.current = target;
+      const measured = card.getBoundingClientRect().height;
+      const target = Math.min(MAX_HOME_HEIGHT, Math.max(MIN_HOME_HEIGHT, measured || 360));
+      homeCardH.current = target;
       const from = lastCardH.current ?? target;
+      if (Math.abs(from - target) < 2) {
+        settle();
+        lastCardH.current = target;
+        void setPaletteHeight(Math.round(target + pads), true).catch(() => {});
+        return;
+      }
       card.style.height = `${from}px`;
       card.style.flex = "0 0 auto";
       animate(from, target, () => {
@@ -83,11 +80,14 @@ export function usePaletteSize(
         void setPaletteHeight(Math.round(target + pads), true).catch(() => {});
       });
     } else {
-      const base = compactCardH.current ?? FALLBACK_COMPACT_CARD;
-      const target = base + MENU_ROOM;
-      const from = lastCardH.current ?? base;
-      // Hold the card at its current height while the window grows, then
-      // let it unfold into the new space.
+      const target = PANEL_CARD_HEIGHT;
+      const from = lastCardH.current ?? homeCardH.current ?? target;
+      if (Math.abs(from - target) < 2) {
+        settle();
+        lastCardH.current = target;
+        void setPaletteHeight(Math.round(target + pads), false).catch(() => {});
+        return;
+      }
       card.style.height = `${from}px`;
       card.style.flex = "0 0 auto";
       void setPaletteHeight(Math.round(target + pads), false)
@@ -100,23 +100,23 @@ export function usePaletteSize(
           });
         });
     }
-  }, [compact, paletteRef, cardRef]);
+  }, [mode, paletteRef, cardRef]);
 
-  // While compact, follow content changes (a drop's "Will start the chat
-  // with" line, the empty state) without animating.
   useEffect(() => {
     const card = cardRef.current;
     const palette = paletteRef.current;
-    if (!compact || !card || !palette || typeof ResizeObserver === "undefined") return;
+    if (mode !== "home" || !card || !palette || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
-      if (card.style.height) return; // mid-animation
-      const h = card.getBoundingClientRect().height;
-      if (compactCardH.current !== null && Math.abs(h - compactCardH.current) < 1) return;
-      compactCardH.current = h;
+      if (card.style.height) return;
+      const raw = card.getBoundingClientRect().height;
+      if (!raw) return;
+      const h = Math.min(MAX_HOME_HEIGHT, Math.max(MIN_HOME_HEIGHT, raw));
+      if (homeCardH.current !== null && Math.abs(h - homeCardH.current) < 1) return;
+      homeCardH.current = h;
       lastCardH.current = h;
       void setPaletteHeight(Math.round(h + paddingOf(palette)), true).catch(() => {});
     });
     ro.observe(card);
     return () => ro.disconnect();
-  }, [compact, cardRef, paletteRef]);
+  }, [mode, cardRef, paletteRef]);
 }

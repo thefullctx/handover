@@ -14,6 +14,8 @@ use std::sync::{Arc, Mutex};
 use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::tray::TrayIconBuilder;
+#[cfg(target_os = "macos")]
+use tauri::window::{Effect, EffectState, EffectsBuilder};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -139,28 +141,40 @@ fn main() {
             };
             app.manage(shared_state);
             app.manage(PendingSettingsTab::default());
-            app.manage(PaletteCompactHeight::default());
+            app.manage(PaletteLastHeight::default());
 
             // Settings is *not* created at launch — only when the user opens
             // it. That avoids a second WebKit process (and the system
             // "running in the background" noise) while the menu-bar app is idle.
             // open_settings() builds it on demand.
 
-            // Palette window, hidden until the hotkey is pressed. Sized for
-            // the glass card + floating dock. WebKit stays for this window
-            // only — that is what powers the UI (cannot be removed).
-            let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+            // Palette window, hidden until the hotkey is pressed. Opens directly
+            // to the unfolded agent list. On macOS, native Liquid Glass /
+            // HudWindow vibrancy + native corner clipping + native shadow give
+            // an authentic floating panel without any CSS shadow gutter.
+            let palette_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title("Handover")
-                .inner_size(PALETTE_WIDTH, PALETTE_DEFAULT_COMPACT_HEIGHT)
+                .inner_size(PALETTE_WIDTH, PALETTE_DEFAULT_HEIGHT)
                 .resizable(false)
                 .decorations(false)
                 .always_on_top(true)
                 .skip_taskbar(true)
                 .transparent(true)
+                .background_color(tauri::window::Color(0, 0, 0, 0))
                 .shadow(false)
                 .center()
-                .visible(false)
-                .build()?;
+                .visible(false);
+            #[cfg(target_os = "macos")]
+            let palette_builder = palette_builder.effects(
+                EffectsBuilder::new()
+                    .effects([Effect::LiquidGlassRegular, Effect::HudWindow])
+                    .state(EffectState::Active)
+                    .radius(PALETTE_CORNER_RADIUS)
+                    .build(),
+            );
+            let _window = palette_builder.build()?;
+            #[cfg(target_os = "macos")]
+            clip_palette_corners(&_window, PALETTE_CORNER_RADIUS);
 
             // Apply the persisted appearance to native chrome; frontend
             // mirrors it into CSS from `app_info` / `appearance:changed`.
@@ -347,13 +361,15 @@ fn open_palette(app: &AppHandle) {
     sync_live_settings(app);
     let _ = app.emit("palette:open", ());
     if let Some(window) = app.get_webview_window("main") {
-        // The palette always reopens on the compact picker; size it before
-        // showing so it never flashes the previous (expanded) size.
+        // The palette always reopens on the unfolded picker; size it before
+        // showing so it never flashes a stale panel height.
         let height = app
-            .try_state::<PaletteCompactHeight>()
+            .try_state::<PaletteLastHeight>()
             .map(|h| *h.0.lock().unwrap_or_else(|e| e.into_inner()))
-            .unwrap_or(PALETTE_DEFAULT_COMPACT_HEIGHT);
+            .unwrap_or(PALETTE_DEFAULT_HEIGHT);
         let _ = window.set_size(tauri::LogicalSize::new(PALETTE_WIDTH, height));
+        #[cfg(target_os = "macos")]
+        clip_palette_corners(&window, PALETTE_CORNER_RADIUS);
         let _ = window.show();
         let _ = window.set_focus();
         let _ = window.unminimize();
@@ -378,29 +394,24 @@ fn open_history(app: &AppHandle, handoff_id: Option<String>) {
     }
 }
 
-/// Rebuilds the tray menu so "Recent Handoffs" matches the session history.
-/// Called at startup and after every completed handoff (the menu is static
-/// between handoffs, so the index in each row id stays valid).
-fn rebuild_tray_menu(app: &AppHandle) {
+fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let recent = app.state::<SharedDaemon>().lock().history.recent();
 
-    let title =
-        MenuItem::with_id(app, "title", "Handover", false, None::<&str>).expect("title item");
-    let quick = MenuItem::with_id(app, "quick_capture", "Open Handover", true, None::<&str>)
-        .expect("quick item");
-    let sep = PredefinedMenuItem::separator(app).expect("separator");
-    let settings =
-        MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>).expect("settings item");
-    let about = MenuItem::with_id(app, "about_handover", "About Handover…", true, None::<&str>)
-        .expect("about item");
-    let quit =
-        MenuItem::with_id(app, "quit", "Quit Handover", true, None::<&str>).expect("quit item");
+    let title = MenuItem::with_id(app, "title", "Handover", false, None::<&str>)?;
+    let quick = MenuItem::with_id(app, "quick_capture", "Open Handover", true, None::<&str>)?;
+    let sep = PredefinedMenuItem::separator(app)?;
+    let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+    let about = MenuItem::with_id(app, "about_handover", "About Handover…", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Handover", true, None::<&str>)?;
 
     let mut recent_items: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = if recent.is_empty() {
-        vec![Box::new(
-            MenuItem::with_id(app, "recent_none", "No handoffs yet", false, None::<&str>)
-                .expect("recent item"),
-        )]
+        vec![Box::new(MenuItem::with_id(
+            app,
+            "recent_none",
+            "No handoffs yet",
+            false,
+            None::<&str>,
+        )?) as Box<dyn IsMenuItem<tauri::Wry>>]
     } else {
         recent
             .iter()
@@ -412,21 +423,26 @@ fn rebuild_tray_menu(app: &AppHandle) {
                     .unwrap_or_default();
                 let status = if o.ok { "✓" } else { "✕" };
                 let label = format!("{dur} · {} · {} {status}", o.agent_name, o.action_id);
-                Box::new(
-                    MenuItem::with_id(app, format!("recent_{}", o.id), label, true, None::<&str>)
-                        .expect("recent item"),
-                ) as Box<dyn IsMenuItem<tauri::Wry>>
+                Ok(Box::new(MenuItem::with_id(
+                    app,
+                    format!("recent_{}", o.id),
+                    label,
+                    true,
+                    None::<&str>,
+                )?) as Box<dyn IsMenuItem<tauri::Wry>>)
             })
-            .collect()
+            .collect::<tauri::Result<Vec<_>>>()?
     };
-    recent_items.push(Box::new(
-        MenuItem::with_id(app, "recent_all", "Show all…", true, None::<&str>)
-            .expect("show all item"),
-    ));
+    recent_items.push(Box::new(MenuItem::with_id(
+        app,
+        "recent_all",
+        "Show all…",
+        true,
+        None::<&str>,
+    )?));
     let submenu_refs: Vec<&dyn IsMenuItem<tauri::Wry>> =
         recent_items.iter().map(|b| b.as_ref()).collect();
-    let recent_sub =
-        Submenu::with_items(app, "Recent Handoffs", true, &submenu_refs).expect("recent submenu");
+    let recent_sub = Submenu::with_items(app, "Recent Handoffs", true, &submenu_refs)?;
 
     let top_refs: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![
         &title,
@@ -439,9 +455,24 @@ fn rebuild_tray_menu(app: &AppHandle) {
         &sep,
         &quit,
     ];
-    let menu = Menu::with_items(app, &top_refs).expect("tray menu");
+    Menu::with_items(app, &top_refs)
+}
+
+/// Rebuilds the tray menu so "Recent Handoffs" matches the session history.
+/// Called at startup and after every completed handoff (the menu is static
+/// between handoffs, so the index in each row id stays valid).
+fn rebuild_tray_menu(app: &AppHandle) {
+    let menu = match build_tray_menu(app) {
+        Ok(m) => m,
+        Err(e) => {
+            log::warn!("could not build tray menu: {e}");
+            return;
+        }
+    };
     if let Some(tray) = app.tray_by_id("main") {
-        let _ = tray.set_menu(Some(menu));
+        if let Err(e) = tray.set_menu(Some(menu)) {
+            log::warn!("could not update tray menu: {e}");
+        }
     }
 }
 
@@ -556,14 +587,27 @@ struct DroppedFile {
 /// The capture size cap for dropped text, matching the daemon's clipboard cap.
 const DROP_TEXT_MAX_BYTES: u64 = 1024 * 1024;
 
+fn is_excluded_drop_path(path: &std::path::Path, patterns: &[String]) -> bool {
+    if handover_core::exclusions::is_excluded_path(path, patterns) {
+        return true;
+    }
+    if let Ok(resolved) = path.canonicalize() {
+        if handover_core::exclusions::is_excluded_path(&resolved, patterns) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Reads files dragged onto the palette. The webview can't open local paths,
 /// so the frontend forwards the `tauri://drag-drop` paths here.
 ///
 /// Privacy discipline is IDENTICAL to daemon file capture: the exclusion list
-/// is checked BEFORE anything is opened, and the read itself goes through
-/// `handover_daemon::read_file_nofollow` (leaf symlinks refused, size-capped
-/// on the same handle). Dropping a `.env`, `id_rsa`, or a symlink to either is
-/// refused with a plain-language note — never read into the composer.
+/// (both raw path and canonicalized target) is checked BEFORE anything is
+/// opened, and the read itself goes through `handover_daemon::read_file_nofollow`
+/// (leaf symlinks refused, size-capped on the same handle). Dropping a `.env`,
+/// `id_rsa`, or a symlink to either is refused with a plain-language note —
+/// never read into the composer.
 #[tauri::command]
 fn read_dropped_files(
     state: tauri::State<SharedDaemon>,
@@ -579,8 +623,8 @@ fn read_dropped_files(
             .unwrap_or("dropped file")
             .to_string();
         // 1. Exclusion check first — refuse before ANY read, matching the
-        //    documented privacy rule (case-insensitive matching inside).
-        if handover_core::exclusions::is_excluded_path(&path, &patterns) {
+        //    documented privacy rule (raw + canonicalized, case-insensitive).
+        if is_excluded_drop_path(&path, &patterns) {
             out.push(DroppedFile {
                 path: p.clone(),
                 name,
@@ -762,22 +806,28 @@ fn settings_window_builder(
     app: &AppHandle,
 ) -> WebviewWindowBuilder<'_, tauri::Wry, tauri::AppHandle<tauri::Wry>> {
     // Empty title: Overlay title bar still shows traffic lights, but no
-    // "Handover Settings" caption in the top-left (brand lives in the sidebar).
-    // Transparent so `--ui-opacity` glass fills match the palette window.
+    // "Handover Settings" caption in the top-left. Transparent + macOS window
+    // effects give native Liquid Glass / UnderWindowBackground vibrancy.
     let builder = WebviewWindowBuilder::new(app, "settings", WebviewUrl::default())
         .title("")
-        .inner_size(620.0, 680.0)
-        .min_inner_size(480.0, 520.0)
+        .inner_size(700.0, 600.0)
+        .min_inner_size(560.0, 480.0)
         .resizable(true)
         .decorations(true)
         .transparent(true)
         .visible(false);
-    // Overlay title bar is a macOS-only Tauri API — the method does not exist
-    // on other targets, so it cannot sit in the chain unconditionally. Linux
-    // and Windows keep standard decorations (see reveal_config's platform
-    // handling for the same shape of split).
+    // Overlay title bar + window effects are macOS-only — Linux and Windows
+    // keep standard decorations.
     #[cfg(target_os = "macos")]
-    let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay);
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .traffic_light_position(tauri::LogicalPosition::new(18.0, 20.0))
+        .effects(
+            EffectsBuilder::new()
+                .effects([Effect::LiquidGlassRegular, Effect::UnderWindowBackground])
+                .state(EffectState::FollowsWindowActiveState)
+                .build(),
+        );
     builder
 }
 
@@ -826,23 +876,72 @@ fn open_settings(app: &AppHandle, tab: Option<&str>) {
 #[derive(Default)]
 struct PendingSettingsTab(Mutex<Option<String>>);
 
-/// Palette window width (points). The height follows the UI: compact on the
-/// plain picker, expanded once the agent menu, a chat or a panel needs room.
-const PALETTE_WIDTH: f64 = 520.0;
+/// Palette window width (points). The height follows the UI: unfolded picker
+/// height on home, or panel height for chat/history.
+const PALETTE_WIDTH: f64 = 480.0;
 /// Height bounds the frontend may request, so a bad measurement can never
 /// produce an unusable window.
-const PALETTE_MIN_HEIGHT: f64 = 120.0;
-const PALETTE_MAX_HEIGHT: f64 = 900.0;
-/// Before the frontend has measured anything (first open).
-const PALETTE_DEFAULT_COMPACT_HEIGHT: f64 = 210.0;
+const PALETTE_MIN_HEIGHT: f64 = 180.0;
+const PALETTE_MAX_HEIGHT: f64 = 640.0;
+/// Default unfolded picker height before the frontend has measured anything.
+const PALETTE_DEFAULT_HEIGHT: f64 = 440.0;
+#[cfg(target_os = "macos")]
+const PALETTE_CORNER_RADIUS: f64 = 22.0;
 
-/// The last compact height the palette reported. Applied before the window is
-/// shown, so it opens at its compact size instead of flashing a taller one.
-struct PaletteCompactHeight(Mutex<f64>);
+/// Clips an AppKit view's backing `CALayer` to Apple's continuous squircle
+/// corner curve so square corners cannot bleed behind rounded vibrancy/glass.
+#[cfg(target_os = "macos")]
+fn clip_view_layer(view: &objc2_app_kit::NSView, radius: f64) {
+    view.setWantsLayer(true);
+    if let Some(layer) = view.layer() {
+        layer.setCornerRadius(radius);
+        // SAFETY: `kCACornerCurveContinuous` is an immutable QuartzCore string constant.
+        unsafe {
+            layer.setCornerCurve(objc2_quartz_core::kCACornerCurveContinuous);
+        }
+        layer.setMasksToBounds(true);
+    }
+}
 
-impl Default for PaletteCompactHeight {
+/// Ensures the palette `NSWindow`, its `contentView`, subviews, and `WKWebView`
+/// are non-opaque/clear and clipped to the native squircle corner radius.
+#[cfg(target_os = "macos")]
+fn clip_palette_corners(window: &tauri::WebviewWindow, radius: f64) {
+    let Ok(ns_window_ptr) = window.ns_window() else {
+        return;
+    };
+    if ns_window_ptr.is_null() {
+        return;
+    }
+    // SAFETY: Tauri returns a valid `NSWindow` pointer while this window exists on the main thread.
+    let ns_window = unsafe { &*(ns_window_ptr as *const objc2_app_kit::NSWindow) };
+    ns_window.setOpaque(false);
+    let clear = objc2_app_kit::NSColor::clearColor();
+    ns_window.setBackgroundColor(Some(&clear));
+
+    if let Some(content_view) = ns_window.contentView() {
+        clip_view_layer(&content_view, radius);
+        for subview in content_view.subviews().iter() {
+            clip_view_layer(&subview, radius);
+        }
+    }
+
+    if let Ok(ns_view_ptr) = window.ns_view() {
+        if !ns_view_ptr.is_null() {
+            // SAFETY: Tauri returns the window's `WKWebView` `NSView` pointer on the main thread.
+            let ns_view = unsafe { &*(ns_view_ptr as *const objc2_app_kit::NSView) };
+            clip_view_layer(ns_view, radius);
+        }
+    }
+}
+
+/// The last picker height the palette reported. Applied before the window is
+/// shown, so it opens cleanly at its unfolded picker size.
+struct PaletteLastHeight(Mutex<f64>);
+
+impl Default for PaletteLastHeight {
     fn default() -> Self {
-        Self(Mutex::new(PALETTE_DEFAULT_COMPACT_HEIGHT))
+        Self(Mutex::new(PALETTE_DEFAULT_HEIGHT))
     }
 }
 
@@ -851,7 +950,7 @@ fn clamp_palette_height(height: f64) -> f64 {
     if height.is_finite() {
         height.clamp(PALETTE_MIN_HEIGHT, PALETTE_MAX_HEIGHT)
     } else {
-        PALETTE_DEFAULT_COMPACT_HEIGHT
+        PALETTE_DEFAULT_HEIGHT
     }
 }
 
@@ -860,7 +959,7 @@ fn clamp_palette_height(height: f64) -> f64 {
 #[tauri::command]
 fn set_palette_height(
     app: AppHandle,
-    remembered: tauri::State<PaletteCompactHeight>,
+    remembered: tauri::State<PaletteLastHeight>,
     height: f64,
     compact: bool,
 ) -> Result<(), String> {
@@ -1068,7 +1167,8 @@ fn available_agents(
 fn substitute_binary(cmd: &str, binary_name: &str, bin: &str) -> String {
     match cmd.strip_prefix(binary_name) {
         Some(rest) if rest.is_empty() || rest.starts_with(char::is_whitespace) => {
-            format!("{bin}{rest}")
+            let quoted = handover_daemon::catalog::quote_shell_arg(bin);
+            format!("{quoted}{rest}")
         }
         _ => cmd.to_string(),
     }
@@ -1413,14 +1513,17 @@ fn native_notify(app: &AppHandle, title: &str, body: &str, critical: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_palette_height, is_openable_url, PALETTE_MAX_HEIGHT, PALETTE_MIN_HEIGHT};
+    use super::{
+        clamp_palette_height, is_excluded_drop_path, is_openable_url, substitute_binary,
+        PALETTE_DEFAULT_HEIGHT, PALETTE_MAX_HEIGHT, PALETTE_MIN_HEIGHT,
+    };
 
     #[test]
     fn palette_heights_are_clamped_to_a_usable_range() {
         assert_eq!(clamp_palette_height(240.0), 240.0);
         assert_eq!(clamp_palette_height(10.0), PALETTE_MIN_HEIGHT);
         assert_eq!(clamp_palette_height(5000.0), PALETTE_MAX_HEIGHT);
-        assert_eq!(clamp_palette_height(f64::NAN), 210.0);
+        assert_eq!(clamp_palette_height(f64::NAN), PALETTE_DEFAULT_HEIGHT);
     }
 
     #[test]
@@ -1437,6 +1540,65 @@ mod tests {
             "-a Calculator",
         ] {
             assert!(!is_openable_url(bad), "should refuse: {bad:?}");
+        }
+    }
+
+    #[test]
+    fn substitute_binary_quotes_paths_with_spaces_or_metacharacters() {
+        assert_eq!(
+            substitute_binary(
+                "codex exec resume {SESSION}",
+                "codex",
+                "/opt/homebrew/bin/codex"
+            ),
+            "/opt/homebrew/bin/codex exec resume {SESSION}"
+        );
+        assert_eq!(
+            substitute_binary(
+                "codex exec resume {SESSION}",
+                "codex",
+                "/Users/My Apps/codex"
+            ),
+            "\"/Users/My Apps/codex\" exec resume {SESSION}"
+        );
+        assert_eq!(
+            substitute_binary(
+                "codex exec resume {SESSION}",
+                "codex",
+                "/Users/x/$dir;id/codex"
+            ),
+            "\"/Users/x/\\$dir;id/codex\" exec resume {SESSION}"
+        );
+    }
+
+    #[test]
+    fn excluded_drop_path_checks_raw_and_canonical_target() {
+        let patterns = handover_core::exclusions::default_excluded_paths();
+        assert!(is_excluded_drop_path(
+            std::path::Path::new("/tmp/project/.env"),
+            &patterns
+        ));
+        #[cfg(unix)]
+        {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let dir = std::env::temp_dir().join(format!("ho-drop-{}-{nanos}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            let secret_dir = dir.join("credentials-dir");
+            std::fs::create_dir_all(&secret_dir).unwrap();
+            let secret_file = secret_dir.join("token.txt");
+            std::fs::write(&secret_file, "secret").unwrap();
+            let link_dir = dir.join("harmless-dir");
+            std::os::unix::fs::symlink(&secret_dir, &link_dir).unwrap();
+
+            let dropped = link_dir.join("token.txt");
+            let mut dir_patterns = patterns;
+            dir_patterns.push(format!("{}/*", secret_dir.display()));
+            assert!(is_excluded_drop_path(&dropped, &dir_patterns));
+
+            let _ = std::fs::remove_dir_all(&dir);
         }
     }
 }

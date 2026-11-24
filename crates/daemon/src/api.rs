@@ -93,6 +93,11 @@ pub fn serve(
 }
 
 fn handle_request(mut request: Request, daemon: SharedDaemon, shutdown: Arc<AtomicBool>) {
+    if let Err(message) = validate_loopback_headers(&request) {
+        respond(request, Err(ApiError::forbidden(message)));
+        return;
+    }
+
     let method = request.method().clone();
     let path = request.url().split('?').next().unwrap_or("").to_string();
 
@@ -161,6 +166,14 @@ impl ApiError {
         }
     }
 
+    /// Rejected due to untrusted Origin or Host header.
+    fn forbidden(message: impl Into<String>) -> Self {
+        Self {
+            status: 403,
+            message: message.into(),
+        }
+    }
+
     /// No such route.
     fn not_found(message: impl Into<String>) -> Self {
         Self {
@@ -168,6 +181,55 @@ impl ApiError {
             message: message.into(),
         }
     }
+}
+
+/// Rejects browser cross-origin requests (`Origin` header present) and any
+/// `Host` header that does not point strictly at loopback (`127.0.0.1`,
+/// `localhost`, `[::1]`) — blocking DNS-rebinding pages from probing
+/// unauthenticated loopback `GET` endpoints.
+fn validate_loopback_headers(request: &Request) -> Result<(), String> {
+    for header in request.headers() {
+        let name = header.field.as_str().to_string();
+        if name.eq_ignore_ascii_case("Origin") {
+            return Err("Browser cross-origin requests are not allowed.".to_string());
+        }
+        if name.eq_ignore_ascii_case("Host") && !is_loopback_host(header.value.as_str().trim()) {
+            return Err("Forbidden Host header: only loopback hosts are allowed.".to_string());
+        }
+    }
+    Ok(())
+}
+
+/// True when a `Host` header refers strictly to a loopback host (with an
+/// optional numeric `:port`).
+fn is_loopback_host(host_header: &str) -> bool {
+    let trimmed = host_header.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let host = if let Some(rest) = trimmed.strip_prefix('[') {
+        let Some(end) = rest.find(']') else {
+            return false;
+        };
+        let after = &rest[end + 1..];
+        if !after.is_empty()
+            && !after
+                .strip_prefix(':')
+                .is_some_and(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+        {
+            return false;
+        }
+        &trimmed[..=end + 1]
+    } else {
+        match trimmed.rsplit_once(':') {
+            Some((h, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => h,
+            Some(_) => return false,
+            None => trimmed,
+        }
+    };
+    host.eq_ignore_ascii_case("127.0.0.1")
+        || host.eq_ignore_ascii_case("localhost")
+        || host == "[::1]"
 }
 
 /// Routes that can change state or trigger agent work require a bearer token.
@@ -538,5 +600,33 @@ mod tests {
         let e = ApiError::bad_request("Not found: that capture");
         assert_eq!(e.status, 400);
         assert!(e.message.starts_with("Not found:"));
+    }
+
+    #[test]
+    fn loopback_host_header_allows_only_loopback_and_rejects_rebinding() {
+        for ok in [
+            "127.0.0.1:47444",
+            "127.0.0.1",
+            "localhost:47444",
+            "LOCALHOST",
+            "[::1]:47444",
+            "[::1]",
+        ] {
+            assert!(is_loopback_host(ok), "should allow {ok:?}");
+        }
+        for bad in [
+            "",
+            "evil.com",
+            "evil.com:47444",
+            "127.0.0.1.evil.com",
+            "localhost.evil.com:47444",
+            "evil.com:127.0.0.1",
+            "[::1:47444",
+            "[::2]:47444",
+            "[::1]extra",
+            "127.0.0.1:abc",
+        ] {
+            assert!(!is_loopback_host(bad), "should reject {bad:?}");
+        }
     }
 }

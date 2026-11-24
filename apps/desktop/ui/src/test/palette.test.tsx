@@ -5,9 +5,7 @@ import App from "../App";
 import { makeAgents, makeFailedOutcome, makeOutcome, makePayload, makeSession } from "./fixtures";
 
 // ---------------------------------------------------------------------------
-// Tauri mock — components call the typed wrappers in ../lib/tauri; we mock
-// that module (with the same argument shapes as the real wrappers) so the
-// palette runs headless in jsdom.
+// Tauri mock
 // ---------------------------------------------------------------------------
 const tauri = vi.hoisted(() => {
   const invoke = vi.fn(
@@ -15,8 +13,6 @@ const tauri = vi.hoisted(() => {
       throw new Error(`unhandled invoke: ${_cmd}`);
     }
   );
-  /** Registered event listeners, keyed by event name (so tests can fire
-   *  `palette:open`, `tauri://drag-drop`, … as the Rust side would). */
   const listeners: Record<string, (e: { payload?: unknown }) => void> = {};
   const listen = vi.fn(
     async (event: string, cb: (e: { payload?: unknown }) => void) => {
@@ -72,7 +68,6 @@ const tauri = vi.hoisted(() => {
 });
 vi.mock("../lib/tauri", () => tauri);
 
-/** A promise we can resolve on demand (for in-flight handoffs). */
 function deferred<T>() {
   let resolve!: (v: T) => void;
   const promise = new Promise<T>((res) => {
@@ -83,8 +78,6 @@ function deferred<T>() {
 
 const sentCalls = () => tauri.invoke.mock.calls.filter((c) => c[0] === "send_handoff");
 
-/** Mutable payload for tests that change what the daemon reports mid-flight
- *  (e.g. an agent flipping from idle to running while the sheet is open). */
 const payloadRef = { current: makePayload() };
 
 async function renderApp(
@@ -92,10 +85,6 @@ async function renderApp(
   history: unknown[] = [],
   handlers: Record<string, unknown> = {}
 ) {
-  // Explicit per-render clear. Vitest 5 also clears mock history between
-  // tests (clearMocks now defaults on), so this is belt-and-braces — but it
-  // keeps the harness correct on its own terms instead of depending on a
-  // runner default a future config change could quietly switch off.
   tauri.invoke.mockImplementation(async (cmd: string) => {
     if (cmd in handlers) return handlers[cmd];
     switch (cmd) {
@@ -119,100 +108,73 @@ async function renderApp(
   tauri.invoke.mockClear();
   const user = userEvent.setup();
   render(<App />);
-  // The palette lands on the merged picker surface (dropdown + chat beneath).
-  await waitFor(() => expect(screen.getByTestId("agent-dropdown-trigger")).toBeInTheDocument());
+  // Palette lands unfolded immediately with the filter input ready.
+  await waitFor(() => expect(screen.getByTestId("agent-filter")).toBeInTheDocument());
   return user;
 }
 
-async function openDropdown(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByTestId("agent-dropdown-trigger"));
-  await waitFor(() => expect(screen.getByRole("listbox", { name: "Agents" })).toBeInTheDocument());
-}
-
-/** Opens the picker and chooses an agent by name — the chat appears directly
- *  beneath the trigger (no navigation). */
+/** Chooses an agent directly from the always-unfolded picker. */
 async function chooseAgent(
   user: ReturnType<typeof userEvent.setup>,
   name: RegExp
 ) {
-  await openDropdown(user);
   await user.click(screen.getByRole("option", { name }));
   await waitFor(() => expect(screen.getByTestId("chat")).toBeInTheDocument());
 }
 
-describe("palette — agent dropdown picker (groups, status, logos)", () => {
-  it("opens compact, grows for the menu, and keeps that size for the chat", async () => {
-    const { MENU_ROOM } = await import("../lib/usePaletteSize");
+describe("palette — unfolded agent picker (groups, filter, status, logos)", () => {
+  it("opens immediately unfolded without any dropdown click, and uses panel height for chat", async () => {
+    const { PANEL_CARD_HEIGHT } = await import("../lib/usePaletteSize");
     const sizes = () =>
       tauri.invoke.mock.calls
         .filter((c) => c[0] === "set_palette_height")
         .map((c) => c[1] as { height: number; compact: boolean });
     const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
-    const palette = document.querySelector(".palette") as HTMLElement;
 
-    // Plain picker: compact, and the window is told the compact height.
-    expect(palette).toHaveClass("compact");
+    // Unfolded right from start: listbox is visible without clicking anything.
+    expect(screen.getByRole("listbox", { name: "Agents" })).toBeInTheDocument();
     await waitFor(() => expect(sizes().some((c) => c.compact)).toBe(true));
-    const compactHeight = sizes().filter((c) => c.compact).slice(-1)[0].height;
 
-    // Opening the menu expands by exactly the menu's room.
-    await openDropdown(user);
-    expect(palette).not.toHaveClass("compact");
+    // Choosing an agent moves cleanly to the panel height for chat.
+    await chooseAgent(user, /Codex/);
     await waitFor(() => expect(sizes().some((c) => !c.compact)).toBe(true));
-    const expanded = sizes().filter((c) => !c.compact).slice(-1)[0].height;
-    expect(expanded).toBe(Math.round(compactHeight + MENU_ROOM));
-
-    // Choosing an agent keeps that size: nothing taller is ever requested.
-    await user.click(screen.getByRole("option", { name: /Codex/ }));
-    await waitFor(() => expect(screen.getByTestId("chat")).toBeInTheDocument());
-    expect(palette).not.toHaveClass("compact");
-    expect(Math.max(...sizes().map((c) => c.height))).toBe(expanded);
+    const panelSize = sizes().filter((c) => !c.compact).slice(-1)[0];
+    expect(panelSize.height).toBeGreaterThanOrEqual(PANEL_CARD_HEIGHT);
   });
 
-  it("shows each agent's session state as a quiet detail on the right", async () => {
-    const user = await renderApp(
+  it("shows each agent's session state on the right", async () => {
+    await renderApp(
       makePayload({ sessions: [makeSession({ agent_id: "hermes", activity: "working" })] })
     );
-    await openDropdown(user);
-    expect(screen.getByTestId("agent-hermes")).toHaveTextContent(/working/);
-    // No session for Codex: it is merely installed.
-    expect(screen.getByTestId("agent-codex")).toHaveTextContent(/installed/);
+    expect(screen.getByTestId("agent-hermes")).toHaveTextContent(/Working/);
+    expect(screen.getByTestId("agent-codex")).toHaveTextContent(/Installed/);
   });
 
-  it("labels an idle session with its time instead of 'working'", async () => {
-    const user = await renderApp(
+  it("labels an idle session with its time instead of 'Working'", async () => {
+    await renderApp(
       makePayload({ sessions: [makeSession({ agent_id: "codex", activity: "idle" })] })
     );
-    await openDropdown(user);
-    expect(screen.getByTestId("agent-codex")).toHaveTextContent(/session · /);
-    expect(screen.getByTestId("agent-codex")).not.toHaveTextContent(/working/);
+    expect(screen.getByTestId("agent-codex")).toHaveTextContent(/Session · /);
+    expect(screen.getByTestId("agent-codex")).not.toHaveTextContent(/Working/);
   });
 
-  it("opens clean (no clipboard capture), trigger shows a placeholder, menu groups Running now / Available", async () => {
-    const user = await renderApp(
+  it("opens clean (no clipboard capture), shows filter input, and groups Running now / Available", async () => {
+    await renderApp(
       makePayload({ sessions: [makeSession({ agent_id: "hermes", activity: "working" })] })
     );
-    // Clipboard capture was removed — nothing pre-fills the composer line.
     expect(screen.queryByTestId("captured-line")).not.toBeInTheDocument();
+    expect(screen.getByTestId("agent-filter")).toHaveAttribute(
+      "placeholder",
+      "Choose an agent or type to filter…"
+    );
 
-    // The picker starts closed with a placeholder trigger.
-    expect(screen.queryByRole("listbox", { name: "Agents" })).not.toBeInTheDocument();
-    expect(screen.getByTestId("agent-dropdown-trigger")).toHaveTextContent("Choose an agent…");
-
-    // Groups appear only while the menu is open, in order.
-    await openDropdown(user);
     const labels = screen.getAllByText(/Running now|Available/);
     expect(labels[0]).toHaveTextContent("Running now");
     expect(labels[1]).toHaveTextContent("Available");
-    // Hermes is running (live session); Codex is available but idle-less.
     expect(screen.getByRole("option", { name: /Hermes/ })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /Codex/ })).toBeInTheDocument();
-    // Rows are lean — no descriptions, no text status chips.
-    expect(screen.queryByText(/Local coding agent/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/OpenAI Codex CLI/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Ready/)).not.toBeInTheDocument();
-    // Each row carries exactly one light: green = genuinely alive right now,
-    // red = not running (a leftover session file doesn't count).
+
+    // Running = green ok dot; installed but idle = neutral idle dot (never red).
     const hermesDot = screen
       .getByRole("option", { name: /Hermes/ })
       .querySelector(".status-dot");
@@ -220,28 +182,49 @@ describe("palette — agent dropdown picker (groups, status, logos)", () => {
     const codexDot = screen
       .getByRole("option", { name: /Codex/ })
       .querySelector(".status-dot");
-    expect(codexDot).toHaveClass("err");
-
-    void user;
+    expect(codexDot).toHaveClass("idle");
   });
 
-  it("choosing an agent opens its chat directly beneath the trigger — no navigation away", async () => {
+  it("filters agents live from the top input, launches on Enter, and clears on Escape", async () => {
+    const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
+    const filter = screen.getByTestId("agent-filter");
+
+    await user.type(filter, "herm");
+    expect(screen.getByRole("option", { name: /Hermes/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Codex/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Hermes/ })).toHaveAttribute("aria-selected", "true");
+
+    // First Escape clears only the filter, keeping the palette open.
+    await user.keyboard("{Escape}");
+    expect(filter).toHaveValue("");
+    expect(screen.getByRole("option", { name: /Codex/ })).toBeInTheDocument();
+    expect(tauri.invoke).not.toHaveBeenCalledWith("hide_palette");
+
+    // Typing a non-matching query offers Clear filter.
+    await user.type(filter, "zzzz");
+    const filterEmpty = screen.getByTestId("filter-empty");
+    expect(filterEmpty).toBeInTheDocument();
+    await user.click(within(filterEmpty).getByRole("button", { name: "Clear filter" }));
+    expect(screen.getByRole("option", { name: /Codex/ })).toBeInTheDocument();
+
+    // Filtering and pressing Enter goes straight to chat.
+    await user.type(filter, "herm");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(screen.getByTestId("chat")).toBeInTheDocument());
+    expect(screen.getByTestId("chat-agent-switcher")).toHaveTextContent("Hermes");
+  });
+
+  it("choosing an agent opens its chat with a compact header switcher", async () => {
     const user = await renderApp();
     await chooseAgent(user, /Hermes/);
-    // The trigger names the agent being chatted with…
-    expect(screen.getByTestId("agent-dropdown-trigger")).toHaveTextContent("Hermes");
-    // …and shows only a light, no text chip (Hermes isn't running → red).
-    const triggerDot = screen
-      .getByTestId("agent-dropdown-trigger")
-      .querySelector(".status-dot");
-    expect(triggerDot).toHaveClass("err");
-    expect(screen.getByTestId("agent-dropdown-trigger")).not.toHaveTextContent(/live|last|Ready/);
-    // …and the chat lives on the same surface (the picker is still mounted).
-    expect(screen.getByTestId("agent-dropdown-trigger")).toBeInTheDocument();
+    const switcher = screen.getByTestId("chat-agent-switcher");
+    expect(switcher).toHaveTextContent("Hermes");
+    expect(switcher.querySelector(".status-dot")).toHaveClass("idle");
+    expect(switcher).not.toHaveTextContent(/live|last|Ready/);
     expect(screen.getByLabelText("Chat message")).toBeInTheDocument();
   });
 
-  it("the trigger's light is green only while the agent runs in the background", async () => {
+  it("the chat switcher's light is green only while the agent runs in the background", async () => {
     const user = await renderApp(
       makePayload({
         agents: makeAgents([{ status: { available: true, detail: "found", running: true } }]),
@@ -249,15 +232,11 @@ describe("palette — agent dropdown picker (groups, status, logos)", () => {
       })
     );
     await chooseAgent(user, /Hermes/);
-    // Hermes' process is genuinely alive (quiet session doesn't matter).
-    const triggerDot = screen
-      .getByTestId("agent-dropdown-trigger")
-      .querySelector(".status-dot");
-    expect(triggerDot).toHaveClass("ok");
+    expect(screen.getByTestId("chat-agent-switcher").querySelector(".status-dot")).toHaveClass("ok");
   });
 
   it("labels a quiet session honestly: green dot only when the process is alive", async () => {
-    const user = await renderApp(
+    await renderApp(
       makePayload({
         sessions: [
           makeSession({ agent_id: "hermes", activity: "idle" }),
@@ -265,52 +244,39 @@ describe("palette — agent dropdown picker (groups, status, logos)", () => {
         ],
       })
     );
-    await openDropdown(user);
-    // No text chips anywhere — the light is the only status cue.
     expect(screen.queryByText(/last ·/)).not.toBeInTheDocument();
     expect(screen.queryByText(/live ·/)).not.toBeInTheDocument();
-    // A quiet session on an idle agent reads RED (not running right now).
     const hermesDot = screen
       .getByRole("option", { name: /Hermes/ })
       .querySelector(".status-dot");
-    expect(hermesDot).toHaveClass("err");
-    // Blocked keeps its words.
+    expect(hermesDot).toHaveClass("idle");
     expect(screen.getByText(/blocked · approve\?/)).toBeInTheDocument();
-    void user;
   });
 
   it("keeps a quiet session on an idle agent under Available — Running now is for live processes only", async () => {
-    // Codex has a session file but its process isn't running → it must not
-    // read as "Running now"; it sits under Available with an honest "last" chip.
-    const user = await renderApp(
+    await renderApp(
       makePayload({ sessions: [makeSession({ agent_id: "codex", activity: "idle", session_id: "c-1" })] })
     );
-    await openDropdown(user);
     const labels = screen.getAllByText(/Running now|Available/);
     expect(labels).toHaveLength(1);
     expect(labels[0]).toHaveTextContent("Available");
-    // The quiet session reads honestly (red light) and stays resumable.
     const codexDot = screen
       .getByRole("option", { name: /Codex/ })
       .querySelector(".status-dot");
-    expect(codexDot).toHaveClass("err");
+    expect(codexDot).toHaveClass("idle");
     expect(screen.getByRole("option", { name: /Codex/ })).toHaveAttribute("aria-disabled", "false");
-    void user;
   });
 
   it("puts an agent whose process is running under Running now even when quiet", async () => {
-    // Hermes is open (process running) but its session is quiet → Running now.
-    const user = await renderApp(
+    await renderApp(
       makePayload({
         agents: makeAgents([{ status: { available: true, detail: "found", running: true } }]),
         sessions: [makeSession({ agent_id: "hermes", activity: "idle" })],
       })
     );
-    await openDropdown(user);
     const labels = screen.getAllByText(/Running now|Available/);
     expect(labels[0]).toHaveTextContent("Running now");
     expect(screen.getByRole("option", { name: /Hermes/ })).toBeInTheDocument();
-    void user;
   });
 
   it("shows unavailable agents as a non-activatable 'Not found' group", async () => {
@@ -322,48 +288,60 @@ describe("palette — agent dropdown picker (groups, status, logos)", () => {
       },
     ];
     const user = await renderApp(makePayload({ agents }));
-    await openDropdown(user);
-    // Group header + per-row chip both say "Not found".
     expect(screen.getAllByText("Not found").length).toBeGreaterThan(0);
     const claude = screen.getByRole("option", { name: /Claude Code/ });
     expect(claude).toHaveAttribute("aria-disabled", "true");
     await user.click(claude);
-    // Unavailable agents cannot be chatted with.
     expect(screen.queryByTestId("chat")).not.toBeInTheDocument();
-    void user;
   });
 
-  it("closes on Escape without dismissing the whole palette, then again to dismiss", async () => {
+  it("returns from chat to the unfolded list on Escape, then dismisses on second Escape", async () => {
     const user = await renderApp();
-    await openDropdown(user);
+    await chooseAgent(user, /Codex/);
     await user.keyboard("{Escape}");
     await waitFor(() =>
-      expect(screen.queryByRole("listbox", { name: "Agents" })).not.toBeInTheDocument()
+      expect(screen.getByRole("listbox", { name: "Agents" })).toBeInTheDocument()
     );
-    // The sheet is still up (the palette did not hide).
-    expect(screen.getByTestId("agent-dropdown-trigger")).toBeInTheDocument();
     expect(tauri.invoke).not.toHaveBeenCalledWith("hide_palette");
-    // Second Escape — nothing open — dismisses the palette itself.
     await user.keyboard("{Escape}");
     await waitFor(() => expect(tauri.invoke).toHaveBeenCalledWith("hide_palette"));
   });
 
-  it("navigates the menu with the arrow keys; Enter chooses the highlighted agent", async () => {
+  it("navigates the unfolded list with arrow keys right from the filter input; Enter chooses the highlighted agent", async () => {
     const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
-    // ArrowDown opens the picker (keyboard-first).
-    await user.keyboard("{ArrowDown}");
-    await waitFor(() => expect(screen.getByRole("listbox", { name: "Agents" })).toBeInTheDocument());
-    // Alphabetical order: Codex first, Hermes second (no recents yet).
+    // Alphabetical order: Codex first, Hermes second.
     expect(screen.getByRole("option", { name: /Codex/ })).toHaveAttribute("aria-selected", "true");
     await user.keyboard("{ArrowDown}{Enter}");
     await waitFor(() => expect(screen.getByTestId("chat")).toBeInTheDocument());
-    expect(screen.getByTestId("agent-dropdown-trigger")).toHaveTextContent("Hermes");
+    expect(screen.getByTestId("chat-agent-switcher")).toHaveTextContent("Hermes");
     expect(screen.getByLabelText("Chat message")).toBeInTheDocument();
   });
 
-  it("flips a dot red→green live while open, without losing dropdown or chat state", async () => {
-    // Real timers, short poll: the interval is injectable so this test never
-    // touches fake timers (a timeout there poisons the whole suite).
+  it("wires combobox ARIA attributes on the filter input and skips unavailable agents on arrows", async () => {
+    const agents = [
+      ...makeAgents(),
+      {
+        meta: { id: "claude", name: "Claude Code", description: "Anthropic's coding agent", kind: "command", demo: false },
+        status: { available: false, running: false, detail: "not found" },
+      },
+    ];
+    const user = await renderApp(makePayload({ agents }));
+    const filter = screen.getByTestId("agent-filter");
+    expect(filter).toHaveAttribute("role", "combobox");
+    expect(filter).toHaveAttribute("aria-controls", "agent-picker-list");
+    expect(filter).toHaveAttribute("aria-expanded", "true");
+    expect(filter).toHaveAttribute("aria-activedescendant", "agent-option-codex");
+
+    // Codex -> Hermes -> wraps back to Codex, skipping unavailable Claude Code.
+    await user.keyboard("{ArrowDown}");
+    expect(filter).toHaveAttribute("aria-activedescendant", "agent-option-hermes");
+    await user.keyboard("{ArrowDown}");
+    expect(filter).toHaveAttribute("aria-activedescendant", "agent-option-codex");
+    await user.keyboard("{ArrowUp}");
+    expect(filter).toHaveAttribute("aria-activedescendant", "agent-option-hermes");
+  });
+
+  it("flips a dot idle→green live while open, without losing list or chat state", async () => {
     const w = window as unknown as { __handoverStatusPollMs?: number };
     w.__handoverStatusPollMs = 40;
     try {
@@ -377,6 +355,7 @@ describe("palette — agent dropdown picker (groups, status, logos)", () => {
           case "notify_result":
           case "hide_palette":
           case "copy_text":
+          case "set_palette_height":
           case "open_settings_window":
             return undefined;
           default:
@@ -385,24 +364,20 @@ describe("palette — agent dropdown picker (groups, status, logos)", () => {
       });
       render(<App />);
       await waitFor(() =>
-        expect(screen.getByTestId("agent-dropdown-trigger")).toBeInTheDocument()
+        expect(screen.getByRole("listbox", { name: "Agents" })).toBeInTheDocument()
       );
 
-      // Open the picker; Codex starts idle → its row light must be RED.
-      await openDropdown(user);
       let codexDot = screen
         .getByRole("option", { name: /Codex/ })
         .querySelector(".status-dot");
-      expect(codexDot).toHaveClass("err");
+      expect(codexDot).toHaveClass("idle");
 
-      // The agent "starts" elsewhere (daemon now reports running)…
       payloadRef.current = makePayload({
         agents: makeAgents([
           {},
           { status: { available: true, detail: "found", running: true } },
         ]),
       });
-      // …within a poll tick the SAME open menu shows GREEN…
       await waitFor(
         () => {
           codexDot = screen
@@ -412,14 +387,11 @@ describe("palette — agent dropdown picker (groups, status, logos)", () => {
         },
         { timeout: 3000 }
       );
-      // …and the menu stayed open through the refresh — no hide/reopen.
       expect(screen.getByRole("listbox", { name: "Agents" })).toBeInTheDocument();
 
-      // And choosing an agent still works right after a tick.
       await user.click(screen.getByRole("option", { name: /Codex/ }));
       await waitFor(() => expect(screen.getByTestId("chat")).toBeInTheDocument());
 
-      // A poll while chatting keeps the thread intact (payload swaps only).
       const composer = screen.getByLabelText("Chat message");
       await user.click(composer);
       await user.keyboard("hello there");
@@ -446,21 +418,17 @@ describe("palette — agent dropdown picker (groups, status, logos)", () => {
       },
     ];
     const user = await renderApp(makePayload({ agents }));
-    await openDropdown(user);
-    // Amber light + the plain-language reason under the name…
     expect(screen.getByText(/provider down/)).toBeInTheDocument();
     const ocDot = screen
       .getByRole("option", { name: /OpenCode/ })
       .querySelector(".status-dot");
     expect(ocDot).toHaveClass("warn");
-    // …and choosing it still works (the send will fail fast with this reason).
     await user.click(screen.getByRole("option", { name: /OpenCode/ }));
     await waitFor(() => expect(screen.getByTestId("chat")).toBeInTheDocument());
   });
 
   it("offers Settings as the setup path when no agents exist", async () => {
     const user = await renderApp(makePayload({ agents: [] }));
-    await openDropdown(user);
     await user.click(screen.getByRole("button", { name: /Open Settings/ }));
     expect(tauri.invoke).toHaveBeenCalledWith("open_settings_window");
   });
@@ -471,9 +439,8 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     const user = await renderApp(makePayload({ quick_send: false }), [], {
       send_handoff: makeOutcome(),
     });
-    await chooseAgent(user, /Codex/); // first agent alphabetically
+    await chooseAgent(user, /Codex/);
 
-    // No clipboard capture → the composer opens empty.
     const composer = screen.getByLabelText("Chat message");
     expect(composer).toHaveValue("");
     await user.click(composer);
@@ -485,7 +452,6 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     expect((sentCalls()[0][1] as { capture: { content: { text: string } } }).capture.content.text).toBe(
       "panic: something exploded"
     );
-    // The reply lands in the thread.
     await waitFor(() =>
       expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
@@ -503,17 +469,13 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     );
     await chooseAgent(user, /Hermes/);
 
-    // The composer opens clean (no clipboard prefill) — type a message.
     const composer = screen.getByLabelText("Chat message");
     await user.click(composer);
     await user.keyboard("what's next");
     await user.keyboard("{Enter}");
     await waitFor(() => expect(sentCalls()).toHaveLength(1));
-    // First message carries no session: the daemon resolves freshest-first
-    // itself, so an owned live session falls back to fresh instead of failing.
     expect(sentCalls()[0][1]).toMatchObject({ actionId: "ask", agentId: "hermes", sessionId: null });
 
-    // The adopted session anchors follow-ups explicitly.
     await waitFor(() =>
       expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
@@ -524,7 +486,7 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     expect(sentCalls()[1][1]).toMatchObject({ actionId: "ask", agentId: "hermes", sessionId: SID });
   });
 
-  it("shows the reply duration as a chip on the agent's message", async () => {
+  it("shows the reply duration on the agent's message", async () => {
     const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
     await chooseAgent(user, /Codex/);
     const composer = screen.getByLabelText("Chat message");
@@ -534,11 +496,10 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
-    // makeOutcome's receipt duration_ms = 45000 → "0:45".
     expect(screen.getByText("0:45")).toBeInTheDocument();
   });
 
-  it("shows a pixel-grid thinking state before the stream starts", async () => {
+  it("shows a circular pulsing thinking state before the stream starts", async () => {
     const pending = deferred<unknown>();
     const user = await renderApp(makePayload(), [], { send_handoff: pending.promise });
     await chooseAgent(user, /Codex/);
@@ -547,9 +508,8 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     await user.keyboard("what's next");
     await user.keyboard("{Enter}");
     const inflight = await screen.findByTestId("chat-inflight");
-    // No streamed output yet → the loader + "Thinking…" state.
     expect(within(inflight).getByText(/Thinking/)).toBeInTheDocument();
-    expect(inflight.querySelector(".pixel-loader")).not.toBeNull();
+    expect(inflight.querySelector(".thinking-dots")).not.toBeNull();
     pending.resolve(makeOutcome());
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
   });
@@ -579,22 +539,16 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
 
     const inflight = await screen.findByTestId("chat-inflight");
     expect(within(inflight).getByText(/Codex is working/)).toBeInTheDocument();
-    // The daemon announces the handoff id before any chunk, and the UI only
-    // accepts chunks matching the id it was told about. Firing `started`
-    // first is what the real event order looks like.
     tauri.listeners["handoff:started"]({ payload: { id: "handoff-0", prompt_len: 128 } });
     tauri.listeners["handoff:output"]({
       payload: { id: "handoff-0", stream: "stdout", chunk: "Working through" },
     });
-    // Streamed text is measured but never shown in the bubble: the user sees
-    // the thinking animation until the finished reply replaces it.
     await waitFor(() =>
       expect(screen.getByTestId("chat-activity-output-volume")).toHaveTextContent("15 B")
     );
     const thinking = within(inflight).getByTestId("chat-thinking");
     expect(thinking).toHaveTextContent("Thinking…");
     expect(thinking).not.toHaveTextContent(/Working through/);
-    // The raw stream exists only inside the collapsed activity panel.
     const activity = within(inflight).getByTestId("chat-activity");
     expect(activity).not.toHaveAttribute("open");
     expect(within(inflight).getByText(/Working through/).closest('[data-testid="chat-activity"]')).toBe(
@@ -605,7 +559,7 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
   });
 
-  it("switching agents in the dropdown swaps the thread beneath the trigger", async () => {
+  it("switching agents in the chat header switcher swaps the thread in place", async () => {
     const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
     await chooseAgent(user, /Codex/);
     const composer = screen.getByLabelText("Chat message");
@@ -616,9 +570,9 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
       expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
 
-    // Pick another agent — same surface, fresh thread.
-    await openDropdown(user);
-    await user.click(screen.getByRole("option", { name: /Hermes/ }));
+    await user.click(screen.getByTestId("chat-agent-switcher"));
+    const menu = await screen.findByRole("menu", { name: "Switch agent" });
+    await user.click(within(menu).getByRole("menuitem", { name: /Hermes/ }));
     await waitFor(() => expect(screen.getByTestId("chat")).toBeInTheDocument());
     expect(screen.getByText(/Say hello to Hermes/)).toBeInTheDocument();
     expect(within(screen.getByTestId("chat-thread")).queryByText(/Fixed the panic/)).not.toBeInTheDocument();
@@ -626,7 +580,6 @@ describe("palette — chat with an agent (verbatim, session-aware)", () => {
 });
 
 describe("palette — handoff activity (real measurements, no guessing)", () => {
-  /** Starts a chat and returns with a message in flight. */
   async function sendPending(user: ReturnType<typeof userEvent.setup>) {
     await chooseAgent(user, /Codex/);
     const composer = screen.getByLabelText("Chat message");
@@ -641,16 +594,12 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     const user = await renderApp(makePayload(), [], { send_handoff: pending.promise });
     await sendPending(user);
 
-    // The daemon reports the rendered prompt's byte size — the UI never
-    // re-derives it, it just shows the number Rust measured.
     tauri.listeners["handoff:started"]({ payload: { id: "handoff-9", prompt_len: 2048 } });
     const activity = await screen.findByTestId("chat-activity");
     await waitFor(() =>
       expect(screen.getByTestId("chat-activity-prompt-size")).toHaveTextContent("2.0 KB")
     );
-    // Nothing has come back yet — "not measured", not a fake zero.
     expect(screen.getByTestId("chat-activity-first-response")).toHaveTextContent("—");
-    // The phase starts at "Sending context" (no output observed yet).
     expect(within(activity).getByText("Sending context")).toHaveAttribute("data-active", "true");
     expect(within(activity).getByText("Agent responding")).toHaveAttribute("data-active", "false");
 
@@ -664,8 +613,6 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     await sendPending(user);
     tauri.listeners["handoff:started"]({ payload: { id: "handoff-9", prompt_len: 512 } });
 
-    // Output arrives → the phase is "Agent responding" and the time to first
-    // response becomes a real measurement.
     tauri.listeners["handoff:output"]({
       payload: { id: "handoff-9", stream: "stdout", chunk: "Working through it" },
     });
@@ -673,14 +620,11 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
       expect(screen.getByText("Agent responding")).toHaveAttribute("data-active", "true")
     );
     expect(screen.getByTestId("chat-activity-first-response")).not.toHaveTextContent("—");
-    // Output volume grows with the stream (18 bytes of real text).
-    // Output volume grows with the stream (18 bytes of real text).
     expect(screen.getByTestId("chat-activity-output-volume")).toHaveTextContent("18 B");
     expect(screen.getByTestId("chat-activity-output")).toHaveTextContent("Working through it");
 
     pending.resolve(makeOutcome());
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
-    // Finished: every timeline step is behind us, none is "active".
     const steps = screen.getByTestId("chat-activity-0-phases");
     expect(steps.querySelectorAll('[data-active="true"]')).toHaveLength(0);
     expect(screen.getAllByText(/Wrapping up/).length).toBeGreaterThan(0);
@@ -696,13 +640,12 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     await waitFor(() =>
       expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
-    // The receipt's stdout is the evidence, and its byte length is the stat.
     const activity = screen.getByTestId("chat-activity-0");
     expect(within(activity).getByText(/Fixed the panic/)).toBeInTheDocument();
     expect(screen.getByTestId("chat-activity-0-output-volume")).toHaveTextContent(/B|KB/);
   });
 
-  it("shows your message as plain text: no bubble, label or prompt disclosure", async () => {
+  it("shows your message in a clean bubble without a label or prompt disclosure", async () => {
     const user = await renderApp(makePayload(), [], { send_handoff: makeOutcome() });
     await chooseAgent(user, /Codex/);
     const composer = screen.getByLabelText("Chat message");
@@ -713,12 +656,9 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
       expect(screen.getByTestId("chat-reply")).toHaveTextContent(/Fixed the panic by adding a null check/)
     );
 
-    const message = document.querySelector(".chat-message") as HTMLElement;
+    const message = document.querySelector(".chat-message.chat-bubble") as HTMLElement;
     expect(message).toHaveTextContent(/^panic: something exploded$/);
-    expect(document.querySelector(".chat-bubble")).toBeNull();
     expect(screen.queryByText("You")).not.toBeInTheDocument();
-    // The exact prompt is no longer in the thread (Recent handoffs keeps
-    // Copy prompt for it).
     expect(screen.queryByText("Prompt that was sent")).not.toBeInTheDocument();
   });
 
@@ -764,9 +704,6 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     );
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
 
-    // Second handoff: until the daemon reports THIS send's prompt size, the
-    // stat must read "not measured" rather than repeating the last one's
-    // number, which would misattribute one handoff's prompt to another.
     await user.click(composer);
     await user.keyboard("second");
     await user.keyboard("{Enter}");
@@ -786,9 +723,6 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     tauri.listeners["handoff:started"]({ payload: { id: "handoff-1", prompt_len: 128 } });
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
 
-    // Second send is under way, but the daemon has not yet announced its id.
-    // A straggler from handoff-1 must not be spliced into handoff-2's turn —
-    // it would corrupt the transcript and stamp a bogus time-to-first-response.
     await user.click(composer);
     await user.keyboard("second");
     await user.keyboard("{Enter}");
@@ -800,10 +734,8 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     await waitFor(() =>
       expect(screen.getByTestId("chat-activity-output-volume")).not.toHaveTextContent("STALE")
     );
-    // Nothing anywhere in the thread should carry the straggler's text.
     expect(screen.queryByText("STALE OUTPUT")).not.toBeInTheDocument();
 
-    // Once this handoff announces itself, its own chunks are accepted.
     tauri.listeners["handoff:started"]({ payload: { id: "handoff-2", prompt_len: 128 } });
     tauri.listeners["handoff:output"]({
       payload: { id: "handoff-2", stream: "stdout", chunk: "FRESH OUTPUT" },
@@ -820,7 +752,6 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     await chooseAgent(user, /Codex/);
     const composer = screen.getByLabelText("Chat message");
 
-    // ---- handoff 1 ----
     await user.click(composer);
     await user.keyboard("first");
     await user.keyboard("{Enter}");
@@ -832,13 +763,12 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     first.resolve(makeOutcome({ id: "handoff-1", receipt: { ok: true, detail: "ok", duration_ms: 1000, stdout: "FIRST REPLY", stderr: "" } }));
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
 
-    // ---- handoff 2: different prompt size, different output ----
     const second = deferred<unknown>();
     tauri.invoke.mockImplementation(async (cmd: string) => {
       if (cmd === "send_handoff") return second.promise;
       if (cmd === "palette_payload") return makePayload();
       if (cmd === "recent_handoffs") return [];
-      if (["notify_result", "hide_palette", "copy_text", "open_settings_window", "clear_history"].includes(cmd)) return undefined;
+      if (["notify_result", "hide_palette", "copy_text", "set_palette_height", "open_settings_window", "clear_history"].includes(cmd)) return undefined;
       if (cmd === "read_dropped_files") return [];
       throw new Error(`unhandled invoke: ${cmd}`);
     });
@@ -853,8 +783,6 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
     second.resolve(makeOutcome({ id: "handoff-2", receipt: { ok: true, detail: "ok", duration_ms: 2000, stdout: "SECOND REPLY, LONGER", stderr: "" } }));
     await waitFor(() => expect(screen.queryByTestId("chat-inflight")).not.toBeInTheDocument());
 
-    // Two panels, two sets of numbers. A single global panel used to make the
-    // first turn report the *second* handoff's figures.
     expect(screen.getByTestId("chat-activity-0")).toBeInTheDocument();
     expect(screen.getByTestId("chat-activity-1")).toBeInTheDocument();
     expect(screen.getByTestId("chat-activity-0-prompt-size")).toHaveTextContent("1.0 KB");
@@ -866,8 +794,8 @@ describe("palette — handoff activity (real measurements, no guessing)", () => 
 });
 
 describe("palette — blocked sessions (approve/deny, explicit only)", () => {
-  it("flags a blocked agent in the dropdown with its pending question", async () => {
-    const user = await renderApp(
+  it("flags a blocked agent in the unfolded list with its pending question", async () => {
+    await renderApp(
       makePayload({
         sessions: [
           makeSession({
@@ -880,17 +808,13 @@ describe("palette — blocked sessions (approve/deny, explicit only)", () => {
         ],
       })
     );
-    await openDropdown(user);
     expect(screen.getByText(/blocked · approve\?/)).toBeInTheDocument();
-    // The blocked entry carries its question in the title tooltip.
     expect(screen.getByTitle("[permission] approve shell command: deploy?")).toBeInTheDocument();
-    // No decision happens from the picker alone — approval lives in the chat.
     expect(sentCalls()).toHaveLength(0);
     expect(tauri.invoke).not.toHaveBeenCalledWith(
       "approve_session",
       expect.objectContaining({ agentId: "hermes" })
     );
-    void user;
   });
 
   it("offers Approve/Deny in the chat when chatting a blocked agent", async () => {
@@ -947,25 +871,6 @@ describe("palette — blocked sessions (approve/deny, explicit only)", () => {
     );
   });
 
-  it("shows the agent's pending question on the blocked dropdown entry", async () => {
-    const user = await renderApp(
-      makePayload({
-        sessions: [
-          makeSession({
-            agent_id: "hermes",
-            activity: "idle",
-            blocked: true,
-            session_id: "b-1",
-            blocked_detail: "[permission] approve shell command: deploy?",
-          }),
-        ],
-      })
-    );
-    await openDropdown(user);
-    expect(screen.getByTitle("[permission] approve shell command: deploy?")).toBeInTheDocument();
-    void user;
-  });
-
   it("chat shows an approval card with what the agent is asking", async () => {
     const user = await renderApp(
       makePayload({
@@ -999,7 +904,7 @@ describe("palette — history and completion actions", () => {
     await waitFor(() => expect(screen.getByTestId("result-panel")).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /Keep chatting/ }));
     await waitFor(() => expect(screen.getByTestId("chat")).toBeInTheDocument());
-    expect(screen.getByTestId("agent-dropdown-trigger")).toHaveTextContent("Hermes");
+    expect(screen.getByTestId("chat-agent-switcher")).toHaveTextContent("Hermes");
   });
 
   it("retry re-opens a chat pre-filled with the original context", async () => {
@@ -1011,14 +916,13 @@ describe("palette — history and completion actions", () => {
     expect(screen.getByLabelText("Chat message")).toHaveValue("panic: something exploded");
   });
 
-  it("'Another agent' reopens the picker with the context pre-filled", async () => {
+  it("'Another agent' reopens the unfolded picker with the context pre-filled", async () => {
     const user = await renderApp(makePayload(), [makeOutcome()]);
     await user.click(screen.getByRole("button", { name: "Recent handoffs" }));
     await waitFor(() => expect(screen.getByTestId("history-list")).toBeInTheDocument());
     await user.click(screen.getByTestId("history-open-handoff-1"));
     await waitFor(() => expect(screen.getByTestId("result-panel")).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /Another agent/ }));
-    // Back on the picker — already open, ready to choose, draft announced.
     await waitFor(() =>
       expect(screen.getByRole("listbox", { name: "Agents" })).toBeInTheDocument()
     );
@@ -1030,16 +934,15 @@ describe("palette — first-run onboarding (teach by doing)", () => {
   it("presents the welcome on the first open; the shortcut press dismisses it", async () => {
     localStorage.clear();
     const user = await renderApp();
-    // First hotkey press → the welcome overlay, not the sheet.
     tauri.listeners["palette:open"]({ payload: null });
     await waitFor(() => expect(screen.getByTestId("welcome")).toBeInTheDocument());
     expect(screen.getByText("Welcome to Handover")).toBeInTheDocument();
 
-    // Pressing the shortcut again IS the dismissal — and it's remembered.
     tauri.listeners["palette:open"]({ payload: null });
     await waitFor(() => expect(screen.queryByTestId("welcome")).not.toBeInTheDocument());
     expect(localStorage.getItem("handover.welcome.seen")).toBe("1");
-    expect(screen.getByTestId("agent-dropdown-trigger")).toBeInTheDocument();
+    expect(screen.getByTestId("agent-filter")).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: "Agents" })).toBeInTheDocument();
     void user;
   });
 
@@ -1051,7 +954,6 @@ describe("palette — first-run onboarding (teach by doing)", () => {
     await user.click(screen.getByRole("button", { name: /Start/ }));
     await waitFor(() => expect(screen.queryByTestId("welcome")).not.toBeInTheDocument());
     expect(localStorage.getItem("handover.welcome.seen")).toBe("1");
-    // A later open goes straight to the sheet.
     tauri.listeners["palette:open"]({ payload: null });
     expect(screen.queryByTestId("welcome")).not.toBeInTheDocument();
   });
@@ -1088,7 +990,6 @@ describe("palette — first-run onboarding (teach by doing)", () => {
     tauri.listeners["palette:open"]({ payload: null });
     await screen.findByTestId("welcome-pickers");
 
-    // Detected agent → Add button. Not-found one is visible but disabled.
     const addCodex = screen.getByRole("button", { name: /Add Codex/ });
     expect(addCodex).toBeEnabled();
     expect(screen.getByRole("button", { name: /OMP/ })).toBeDisabled();
@@ -1097,7 +998,6 @@ describe("palette — first-run onboarding (teach by doing)", () => {
     await waitFor(() =>
       expect(tauri.invoke).toHaveBeenCalledWith("configure_agent", { id: "codex", binaryPath: null })
     );
-    // The row flips to Added without leaving the welcome.
     expect(screen.queryByRole("button", { name: /Add Codex/ })).not.toBeInTheDocument();
   });
 
@@ -1134,7 +1034,6 @@ describe("palette — drag and drop capture (pre-fills the chat)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("captured-line")).toHaveTextContent(/fatal: disk full/)
     );
-    // Choosing an agent hands the dropped text to its composer.
     await chooseAgent(user, /Codex/);
     expect(screen.getByLabelText("Chat message")).toHaveValue("fatal: disk full");
   });

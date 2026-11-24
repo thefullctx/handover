@@ -2,25 +2,20 @@ import { Icon } from "../Icons";
 import type { ApprovalResult } from "../lib/types";
 
 interface Props {
-  /** The agent asking for a decision (shown in the title line). */
+  /** The agent asking for a decision. */
   agentName: string;
-  /** What the agent is actually asking — the matched permission-marker line
-   *  surfaced by the daemon. Falls back to a generic line when unavailable. */
+  /** The matched permission-marker line surfaced by the daemon. */
   question?: string | null;
   /** True while the decision is in flight (buttons disabled). */
   approving?: boolean;
   /** Only the explicit button press injects. */
   onApprove?: (approve: boolean) => void;
-  /** Result of the last decision (verified / fail-soft message), inline. */
+  /** Result of the last decision, inline. */
   note?: ApprovalResult | null;
 }
 
 /**
- * The human-in-the-loop approval card (Beautiful UI #4 pattern): instead of a
- * bare "blocked · approve?" chip, the agent's pending question is shown as a
- * card with explicit Approve / Deny actions. Only the button press injects —
- * the daemon re-checks the session is still blocked and verifies the
- * transcript resumes before ever claiming success.
+ * Native macOS-style approval card (secondary Deny left, primary Approve right).
  */
 export default function ApprovalCard({
   agentName,
@@ -32,7 +27,7 @@ export default function ApprovalCard({
   return (
     <div className="approval-card" data-testid="approval-card" role="group" aria-label="Approval needed">
       <span className="approval-card-icon">
-        <Icon name="shield" size={16} />
+        <Icon name="shield" size={15} />
       </span>
       <div className="approval-card-body">
         <span className="approval-card-title">
@@ -53,22 +48,22 @@ export default function ApprovalCard({
         <span className="approval-card-actions" role="group" aria-label="Approval decision">
           <button
             type="button"
-            className="btn"
-            onClick={() => onApprove?.(true)}
-            disabled={approving || !onApprove}
-            aria-label="Approve"
-          >
-            <Icon name="check" size={13} />
-            Approve
-          </button>
-          <button
-            type="button"
             className="btn ghost"
             onClick={() => onApprove?.(false)}
             disabled={approving || !onApprove}
             aria-label="Deny"
           >
             Deny
+          </button>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => onApprove?.(true)}
+            disabled={approving || !onApprove}
+            aria-label="Approve"
+          >
+            <Icon name="check" size={13} />
+            Approve
           </button>
         </span>
       </div>

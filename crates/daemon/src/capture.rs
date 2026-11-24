@@ -85,7 +85,7 @@ pub fn read_file_nofollow(
     use std::io::Read;
 
     #[cfg(unix)]
-    let mut file = {
+    let file = {
         use std::os::unix::fs::OpenOptionsExt;
         std::fs::OpenOptions::new()
             .read(true)
@@ -107,7 +107,7 @@ pub fn read_file_nofollow(
     };
 
     #[cfg(not(unix))]
-    let mut file = {
+    let file = {
         // Best-effort: refuse if lstat says symlink, then open. Windows has no
         // portable O_NOFOLLOW equivalent in std; TOCTOU remains a residual risk.
         let meta = std::fs::symlink_metadata(path)
@@ -131,8 +131,12 @@ pub fn read_file_nofollow(
     if meta.len() > max_bytes {
         return Ok((meta, None));
     }
-    let mut bytes = Vec::with_capacity(meta.len() as usize);
-    file.read_to_end(&mut bytes)
+    let mut bytes = Vec::with_capacity((meta.len().min(max_bytes) + 1) as usize);
+    file.take(max_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)
         .map_err(|e| format!("Could not read `{}`: {e}", path.display()))?;
+    if bytes.len() as u64 > max_bytes {
+        return Ok((meta, None));
+    }
     Ok((meta, Some(bytes)))
 }

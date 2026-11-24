@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import App from "./App";
 import SettingsApp from "./Settings";
-import "./styles/fonts.css";
+import ErrorBoundary from "./components/ErrorBoundary";
 import "./styles/tokens.css";
 import "./styles/palette.css";
 import "./styles/settings.css";
@@ -14,12 +14,22 @@ import "./styles/settings.css";
 // and the decorated Settings window ("settings"). Route by window label.
 const isSettings = getCurrentWindow().label === "settings";
 
-// macOS-only chrome (Overlay traffic lights, 78px sidebar clearance) is gated
-// behind `html.is-mac` so Linux/Windows keep normal padding.
-document.documentElement.classList.toggle(
-  "is-mac",
-  typeof navigator !== "undefined" && /mac/i.test(navigator.platform ?? "")
-);
+// macOS-only chrome (native Liquid Glass vibrancy, Overlay traffic lights,
+// full-bleed corners) is gated behind `html.is-mac` so Linux/Windows keep
+// normal padding and CSS card shadows.
+const isMac =
+  typeof navigator !== "undefined" &&
+  (/mac/i.test(navigator.platform ?? "") || /macintosh/i.test(navigator.userAgent ?? ""));
+document.documentElement.classList.toggle("is-mac", isMac);
+
+// Mirror native AppKit window active/inactive state so unfocused windows subtly
+// soften their glass selection and chrome.
+window.addEventListener("blur", () => {
+  document.documentElement.classList.add("window-inactive");
+});
+window.addEventListener("focus", () => {
+  document.documentElement.classList.remove("window-inactive");
+});
 
 // ---------------------------------------------------------------------------
 // Appearance (System / Light / Dark)
@@ -78,5 +88,7 @@ void listen<number>("ui-opacity:changed", (e) => {
 });
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>{isSettings ? <SettingsApp /> : <App />}</React.StrictMode>
+  <React.StrictMode>
+    <ErrorBoundary>{isSettings ? <SettingsApp /> : <App />}</ErrorBoundary>
+  </React.StrictMode>
 );

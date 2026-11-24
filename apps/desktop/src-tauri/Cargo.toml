@@ -22,3 +22,19 @@ handover-core = { path = "../../../crates/core" }
 handover-config = { path = "../../../crates/config" }
 handover-agents = { path = "../../../crates/agents" }
 handover-daemon = { path = "../../../crates/daemon" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "objc2-core-foundation",
+  "objc2-quartz-core",
+  "NSColor",
+  "NSResponder",
+  "NSView",
+  "NSWindow",
+] }
+objc2-quartz-core = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "objc2-core-foundation",
+  "CALayer",
+] }

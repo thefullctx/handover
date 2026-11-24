@@ -233,29 +233,31 @@ fn is_executable_file(path: &Path) -> bool {
     true
 }
 
-/// Replaces `{BIN}` in the template with the resolved binary. Paths
-/// containing whitespace are quoted so `sh -c` parses them as one word, and
-/// the content is escaped for double-quote context (`$`, backticks,
-/// backslashes) — mirroring the generic command agent's prompt escaping.
-pub fn build_command(template: &str, bin: &str) -> String {
-    let quoted = if needs_quoting(bin) {
-        let escaped = bin
+/// Quotes and escapes a shell argument for `sh -c` whenever it is empty or
+/// contains anything outside conservative unquoted path characters.
+pub fn quote_shell_arg(arg: &str) -> String {
+    let safe = !arg.is_empty()
+        && arg.chars().all(|c| {
+            c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '+' | '@' | ':' | '=')
+        });
+    if safe {
+        arg.to_string()
+    } else {
+        let escaped = arg
             .replace('\\', "\\\\")
             .replace('"', "\\\"")
             .replace('$', "\\$")
             .replace('`', "\\`");
         format!("\"{escaped}\"")
-    } else {
-        bin.to_string()
-    };
-    template.replace("{BIN}", &quoted)
+    }
 }
 
-/// A binary path needs shell quoting when it contains characters that `sh -c`
-/// would interpret — whitespace, quotes, or expansion metacharacters.
-fn needs_quoting(bin: &str) -> bool {
-    bin.chars()
-        .any(|c| c.is_whitespace() || matches!(c, '"' | '\'' | '\\' | '$' | '`'))
+/// Replaces `{BIN}` in the template with the resolved binary, quoting and
+/// escaping for `sh -c` whenever the path contains whitespace or shell
+/// metacharacters.
+pub fn build_command(template: &str, bin: &str) -> String {
+    let quoted = quote_shell_arg(bin);
+    template.replace("{BIN}", &quoted)
 }
 
 /// Resolves a user-supplied path or bare name **strictly** — no candidate/
@@ -335,6 +337,19 @@ mod tests {
         // `$` and backticks must survive `sh -c` unexpanded inside the quotes.
         let cmd = build_command("{BIN} \"{PROMPT}\"", "/Users/x/my$dir/`weird`/omp");
         assert_eq!(cmd, "\"/Users/x/my\\$dir/\\`weird\\`/omp\" \"{PROMPT}\"");
+    }
+
+    #[test]
+    fn build_command_quotes_shell_operators_in_paths() {
+        assert_eq!(quote_shell_arg(""), "\"\"");
+        assert_eq!(
+            build_command("{BIN} \"{PROMPT}\"", "/Users/x/dir;id/omp"),
+            "\"/Users/x/dir;id/omp\" \"{PROMPT}\""
+        );
+        assert_eq!(
+            build_command("{BIN} \"{PROMPT}\"", "/Users/x/(a&b)/omp"),
+            "\"/Users/x/(a&b)/omp\" \"{PROMPT}\""
+        );
     }
 
     #[test]

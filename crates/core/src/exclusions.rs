@@ -98,6 +98,28 @@ pub fn is_excluded_path(path: &Path, patterns: &[String]) -> bool {
         if matches_glob_ci(&expanded, &path_str) {
             return true;
         }
+        // Canonicalize any static directory prefix (before the first glob) so
+        // patterns like `/var/.../*` match symlink-resolved paths (`/private/var/...`
+        // on macOS) when callers canonicalize candidate targets.
+        let glob_pos = expanded.find(['*', '?']).unwrap_or(expanded.len());
+        if let Some(slash_pos) = expanded[..glob_pos].rfind('/') {
+            let dir_part = if slash_pos == 0 {
+                "/"
+            } else {
+                &expanded[..slash_pos]
+            };
+            let rest = &expanded[slash_pos..];
+            if let Ok(canon_dir) = Path::new(dir_part).canonicalize() {
+                let canon_expanded = format!(
+                    "{}{}",
+                    canon_dir.to_string_lossy().trim_end_matches('/'),
+                    rest
+                );
+                if matches_glob_ci(&canon_expanded, &path_str) {
+                    return true;
+                }
+            }
+        }
         if !expanded.contains('/') && matches_glob_ci(&expanded, name) {
             return true;
         }

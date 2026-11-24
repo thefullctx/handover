@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { HandoverMark, Icon } from "../Icons";
+import { AgentLogo, HandoverMark, Icon } from "../Icons";
 import { formatShortcut } from "../lib/format";
 import type { GalleryAgent } from "../lib/types";
 
@@ -14,14 +14,8 @@ interface Props {
 }
 
 /**
- * First-run onboarding — one screen, one message, taught by doing.
- * The way to dismiss it IS the shortcut: pressing it again (or Start)
- * closes the overlay and drops you into the sheet. No wizard, no reading list.
- *
- * Before the hotkey lesson there is ONE optional step: "pick your
- * assistants". Detected (installed) agents sit at the top with a one-tap
- * Add; everything else lives in Settings. Skipping costs nothing — the
- * palette's empty state links onward, so onboarding never blocks usage.
+ * First-run onboarding — Apple "What's New"-style sheet with one-tap agent
+ * additions and an icon-left feature overview.
  */
 export default function WelcomeOverlay({
   shortcut,
@@ -32,15 +26,11 @@ export default function WelcomeOverlay({
   const glyph = formatShortcut(shortcut);
   const startRef = useRef<HTMLButtonElement>(null);
 
-  // Only un-added entries are pickable here; installed ones lead.
   const candidates = [...gallery]
     .filter((a) => !a.configured)
     .sort((a, b) => Number(!!b.detected_path) - Number(!!a.detected_path));
-  // The picker step only earns its space when there is something to pick.
   const showPicker = candidates.length > 0;
 
-  // Move focus into the dialog (a11y): the overlay answers one question, and
-  // Start is the answer. Tab stays on it rather than roaming behind the modal.
   useEffect(() => {
     startRef.current?.focus();
   }, []);
@@ -63,70 +53,87 @@ export default function WelcomeOverlay({
     >
       <div className="welcome-card">
         <span className="welcome-mark">
-          <HandoverMark size={56} tile />
+          <HandoverMark size={52} tile />
         </span>
         <h2>Welcome to Handover</h2>
         <p className="welcome-lead">
-          See something worth handing off? Copy it, press{" "}
-          <kbd className="welcome-kbd">{glyph}</kbd>, pick the agent you're
-          already talking to — and keep chatting.
+          Press <kbd>{glyph}</kbd> anywhere to pick a local agent and keep the
+          conversation going.
         </p>
 
         {showPicker && (
           <>
             <div className="welcome-pickers" data-testid="welcome-pickers">
-              <div className="welcome-picker-title">Pick your assistants</div>
-              {candidates.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  className={`welcome-agent${a.detected_path ? " detected" : ""}`}
-                  onClick={() => onAddAgent(a)}
-                  disabled={!a.detected_path}
-                  aria-label={
-                    a.detected_path ? `Add ${a.name}` : `${a.name} — not found`
-                  }
-                  title={
-                    a.detected_path
-                      ? `Add ${a.name} — it is already installed on this Mac`
-                      : `${a.name} was not found on this Mac — add it from Settings after installing`
-                  }
-                >
-                  <Icon name="agentLocal" size={14} />
-                  <span className="welcome-agent-name">{a.name}</span>
-                  {a.signed_in === true && (
-                    <span className="chip ok">signed in</span>
-                  )}
-                  {a.detected_path ? (
-                    <span className="welcome-agent-add">
-                      <Icon name="plus" size={11} />
-                      Add
+              <div className="welcome-picker-title">Detected Assistants</div>
+              <div className="welcome-picker-group">
+                {candidates.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className={`welcome-agent${a.detected_path ? " detected" : ""}`}
+                    onClick={() => onAddAgent(a)}
+                    disabled={!a.detected_path}
+                    aria-label={
+                      a.detected_path ? `Add ${a.name}` : `${a.name} — not found`
+                    }
+                    title={
+                      a.detected_path
+                        ? `Add ${a.name} — it is already installed on this Mac`
+                        : `${a.name} was not found on this Mac — add it from Settings after installing`
+                    }
+                  >
+                    <span className="welcome-agent-logo">
+                      <AgentLogo id={a.id} size={17} />
                     </span>
-                  ) : (
-                    <span className="chip off">not found</span>
-                  )}
-                </button>
-              ))}
+                    <span className="welcome-agent-name">{a.name}</span>
+                    {a.signed_in === true && (
+                      <span className="chip ok">Signed in</span>
+                    )}
+                    {a.detected_path ? (
+                      <span className="welcome-agent-add">
+                        <Icon name="plus" size={11} />
+                        Add
+                      </span>
+                    ) : (
+                      <span className="chip off">Not found</span>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
-            <p className="welcome-hint" style={{ marginTop: -6 }}>
-              Added agents appear in the palette instantly. More options live in
-              Settings → Agents.
+            <p className="welcome-hint">
+              Added agents appear right away. More options live in Settings → Agents.
             </p>
           </>
         )}
 
-        <div className="welcome-steps" aria-hidden="true">
-          <div className="welcome-step">
-            <span className="step-num">1</span>
-            <span>Copy the context</span>
+        <div className="welcome-features" aria-hidden="true">
+          <div className="welcome-feature">
+            <span className="welcome-feature-icon">
+              <Icon name="keyboard" size={16} />
+            </span>
+            <div className="welcome-feature-text">
+              <strong>Press {glyph} anywhere</strong>
+              <span>Opens directly to your unfolded agent list.</span>
+            </div>
           </div>
-          <div className="welcome-step">
-            <span className="step-num">2</span>
-            <span>Pick your agent</span>
+          <div className="welcome-feature">
+            <span className="welcome-feature-icon">
+              <Icon name="agentLocal" size={16} />
+            </span>
+            <div className="welcome-feature-text">
+              <strong>Resume live sessions</strong>
+              <span>Filter or use ↑↓ and ↵ to jump straight into chat.</span>
+            </div>
           </div>
-          <div className="welcome-step">
-            <span className="step-num">3</span>
-            <span>Chat</span>
+          <div className="welcome-feature">
+            <span className="welcome-feature-icon">
+              <Icon name="shield" size={16} />
+            </span>
+            <div className="welcome-feature-text">
+              <strong>Local-first by design</strong>
+              <span>Nothing is uploaded; only your chosen agent sees your context.</span>
+            </div>
           </div>
         </div>
 
@@ -136,10 +143,7 @@ export default function WelcomeOverlay({
           </button>
         </div>
         <p className="welcome-hint">
-          Tip: press <kbd>{glyph}</kbd> again to start — no click needed.
-        </p>
-        <p className="welcome-local">
-          Runs locally · Handover does not upload your context
+          Press <kbd>{glyph}</kbd> again to start — no click needed.
         </p>
       </div>
     </div>
